@@ -75,16 +75,26 @@ function parseNetDev(text) {
   return total
 }
 
-function countUdpSockets(text) {
-  var n = 0
+function udpOwners(text) {
+  var seen = {}
   var lines = String(text || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
-    var fields = lines[i].trim().split(/\s+/)
+    var line = lines[i]
+    var fields = line.trim().split(/\s+/)
     if (fields.length < 5) continue
-    if (isLoopback(fields[3]) || isLoopback(fields[4])) continue
-    if (/users:\(\(/.test(lines[i])) n++
+    if (isLoopback(fields[2]) || isLoopback(fields[3])) continue
+    var who = parseProcess(line)
+    if (!who.app) continue
+    if (!seen[who.app]) seen[who.app] = { name: who.app, pid: who.pid, sockets: 0 }
+    seen[who.app].sockets += 1
   }
-  return n
+  var out = []
+  for (var key in seen) out.push(seen[key])
+  out.sort(function (a, b) {
+    if (b.sockets !== a.sockets) return b.sockets - a.sockets
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+  })
+  return out
 }
 
 function socketDelta(previous, current) {
@@ -102,7 +112,7 @@ function emptyState() {
     apps: {},
     iface: { rx: 0, tx: 0 },
     unattributed: { rx: 0, tx: 0, rxRate: 0, txRate: 0 },
-    udpSockets: 0,
+    udp: [],
     primed: false
   }
 }
@@ -120,7 +130,7 @@ function applySample(state, sample) {
       rxRate: 0,
       txRate: 0
     },
-    udpSockets: sample.udpSockets || 0,
+    udp: sample.udp || [],
     primed: true
   }
 

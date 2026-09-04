@@ -55,8 +55,8 @@ const NET_DEV = [
   "br-70698e4729e1: 5  1 0 0 0 0 0 0 7 1"
 ].join("\n")
 
-function sample(atMs, sockets, iface, udpSockets) {
-  return { atMs, sockets, iface: iface || { rx: 0, tx: 0 }, udpSockets: udpSockets || 0 }
+function sample(atMs, sockets, iface, udp) {
+  return { atMs, sockets, iface: iface || { rx: 0, tx: 0 }, udp: udp || [] }
 }
 
 function prime(sockets, iface) {
@@ -213,14 +213,23 @@ test("attribution above the interface count never goes negative", () => {
   assert.strictEqual(state.unattributed.rx, 0)
 })
 
-test("counts UDP sockets so the panel can say QUIC is unmeasured", () => {
+test("names the apps holding UDP sockets, because QUIC bytes are unmeasurable", () => {
   const udp = [
-    '0 0 10.0.0.69:40201 40.104.14.210:443  users:(("brave",pid=203553,fd=32))',
-    '0 0 10.0.0.69:41300 160.79.104.10:443  users:(("claude-desktop",pid=373465,fd=19))',
+    '0 0 10.0.0.69:56068 35.186.224.26:443 users:(("spotify",pid=428385,fd=35))',
+    '0 0 10.0.0.69:40842 35.186.224.24:443 users:(("spotify",pid=428385,fd=37))',
+    '0 0 10.0.0.69:40201 40.104.14.210:443 users:(("brave",pid=203553,fd=32))',
     "0 0 10.0.0.69%wlo1:68 10.0.0.1:67",
     '0 0 127.0.0.1:5353 127.0.0.1:5353 users:(("avahi",pid=1,fd=1))'
   ].join("\n")
-  assert.strictEqual(api.countUdpSockets(udp), 2, "no process and loopback both drop out")
+  const owners = api.udpOwners(udp)
+  assert.deepStrictEqual(owners.map(o => o.name), ["spotify", "brave"], "busiest first")
+  assert.strictEqual(owners[0].sockets, 2)
+  assert.strictEqual(owners[0].pid, 428385)
+})
+
+test("a machine with no QUIC in flight names nobody", () => {
+  assert.deepStrictEqual(api.udpOwners(""), [])
+  assert.deepStrictEqual(api.udpOwners("0 0 10.0.0.69%wlo1:68 10.0.0.1:67"), [])
 })
 
 console.log("\nModel.ranked")

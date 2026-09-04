@@ -26,7 +26,7 @@ const collect = () => ({
   atMs: Date.now(),
   sockets: Model.parseSockets(run("ss", ["-tinpH"])),
   iface: Model.parseNetDev(fs.readFileSync("/proc/net/dev", "utf8")),
-  udpSockets: Model.countUdpSockets(run("ss", ["-unpH"]))
+  udp: Model.udpOwners(run("ss", ["-unpH"]))
 })
 
 const ticks = Number(process.argv[2] || 5)
@@ -39,7 +39,7 @@ const timer = setInterval(() => {
   console.log(
     `\n[${++i}] down ${Model.formatRate(total.rx)}  up ${Model.formatRate(total.tx)}` +
     `  unattributed ${Model.formatRate(state.unattributed.rxRate)}` +
-    `  udp ${state.udpSockets}`
+    `\n    unmeasured QUIC: ${state.udp.map(u => u.name + "(" + u.sockets + ")").join(", ") || "none"}`
   )
   for (const app of Model.ranked(state).slice(0, 5)) {
     console.log(
