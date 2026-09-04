@@ -409,5 +409,48 @@ test("a name too long to fit is cut with an ellipsis rather than overflowing", (
   assert.strictEqual(api.barLabel(busyState(5000, 0, "claude-desktop"), "top-app"), "claude-de\u2026")
 })
 
+console.log("\nModel presentation helpers")
+
+test("colours in one chart are all different", () => {
+  const apps = ["brave", "spotify", "curl", "claude", "t3code", "quickshell", "gvfsd-smb"]
+    .map(name => ({ name }))
+  const assigned = api.assignColors(apps)
+  const used = apps.map(a => assigned[a.name])
+  assert.strictEqual(new Set(used).size, apps.length, "two slices sharing a colour cannot be told apart")
+})
+
+test("more apps than colours reuses rather than running out", () => {
+  const apps = Array.from({ length: 30 }, (unused, i) => ({ name: "app" + i }))
+  const assigned = api.assignColors(apps)
+  assert.strictEqual(Object.keys(assigned).length, 30)
+  for (const name in assigned) assert.ok(/^#[0-9a-f]{6}$/.test(assigned[name]))
+})
+
+test("an app keeps its colour whatever its rank", () => {
+  assert.strictEqual(api.appColor("brave"), api.appColor("brave"))
+  assert.notStrictEqual(api.appColor("brave"), api.appColor("spotify"))
+  assert.ok(/^#[0-9a-f]{6}$/.test(api.appColor("anything")))
+  assert.ok(/^#[0-9a-f]{6}$/.test(api.appColor("")), "an unnamed app still gets a colour")
+})
+
+test("shares read as percentages and keep a decimal only when small", () => {
+  assert.strictEqual(api.formatShare(0.75), "75%")
+  assert.strictEqual(api.formatShare(0.014), "1.4%")
+  assert.strictEqual(api.formatShare(0), "0%")
+  assert.strictEqual(api.formatShare(1.4), "100%", "a share cannot exceed the whole")
+})
+
+test("a change carries its direction, and no change says so", () => {
+  assert.strictEqual(api.formatChange(0), "no change")
+  assert.strictEqual(api.formatChange(2400000), "+2.40 MB")
+  assert.strictEqual(api.formatChange(-2400000), "\u22122.40 MB")
+})
+
+test("a day key reads as a date a person would say", () => {
+  assert.strictEqual(api.formatDay("2026-09-04"), "Sep 4")
+  assert.strictEqual(api.formatDay("2026-12-31"), "Dec 31")
+  assert.strictEqual(api.formatDay("nonsense"), "nonsense")
+})
+
 console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`)
 process.exit(failures === 0 ? 0 : 1)

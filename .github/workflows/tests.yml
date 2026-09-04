@@ -16,6 +16,9 @@ jobs:
       - name: The parsing and accounting rules hold
         run: node test/model.test.js
 
+      - name: The stored history holds
+        run: node test/history.test.js
+
       # qmlformat parses the grammar without resolving types. qmllint would
       # need Omarchy's shell installed to resolve every `qs.*` import, so it
       # would answer a different question here than it does on a desktop.

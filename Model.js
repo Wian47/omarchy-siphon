@@ -348,3 +348,77 @@ function barLabel(state, mode) {
   var rate = mode === "down" ? total.rx : total.rx + total.tx
   return fixedWidth(formatRate(rate), RATE_WIDTH, true)
 }
+
+// A stable colour per application, so the donut and its legend agree and an
+// app keeps its colour between sessions. Hashed from the name rather than
+// assigned by rank, which would recolour the whole chart whenever the order
+// changed.
+// Ordered so consecutive entries sit in different hue families. Collision
+// probing walks this list, so neighbours are what a crowded chart ends up
+// using and they have to be told apart at the size of a legend dot.
+var PALETTE = [
+  "#7aa2f7", "#f7768e", "#9ece6a", "#bb9af7", "#e0af68",
+  "#2ac3de", "#ff9e64", "#d291e4", "#8fd6a9", "#cfc9a4"
+]
+
+function colorIndex(name) {
+  var text = String(name || "")
+  var hash = 0
+  for (var i = 0; i < text.length; i++) {
+    hash = (hash * 31 + text.charCodeAt(i)) % 100000007
+  }
+  return hash % PALETTE.length
+}
+
+function appColor(name) {
+  return PALETTE[colorIndex(name)]
+}
+
+// Hashing alone collides: with ten colours, seven apps share one about as
+// often as not, and a chart with two identical slices is unreadable. Each app
+// starts at its hashed colour and takes the next free one if that is gone, so
+// colours stay put while the set does and are always distinct within a chart.
+function assignColors(apps) {
+  var taken = {}
+  var out = {}
+  for (var i = 0; i < apps.length; i++) {
+    var name = apps[i].name
+    var start = colorIndex(name)
+    var pick = start
+    for (var probe = 0; probe < PALETTE.length; probe++) {
+      var candidate = (start + probe) % PALETTE.length
+      if (!taken[candidate]) {
+        pick = candidate
+        break
+      }
+    }
+    taken[pick] = true
+    out[name] = PALETTE[pick]
+  }
+  return out
+}
+
+function formatShare(fraction) {
+  var percent = Math.max(0, Math.min(1, fraction || 0)) * 100
+  return (percent >= 10 || percent === 0 ? percent.toFixed(0) : percent.toFixed(1)) + "%"
+}
+
+function formatChange(bytes) {
+  if (!bytes) return "no change"
+  return (bytes > 0 ? "+" : "−") + formatBytes(Math.abs(bytes))
+}
+
+function formatDay(key) {
+  var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  var parts = String(key).split("-")
+  if (parts.length !== 3) return String(key)
+  return months[Number(parts[1]) - 1] + " " + Number(parts[2])
+}
+
+var WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+var GLYPH_CALENDAR = codepoint(0xF00ED)  // md-calendar
+var GLYPH_BACK = codepoint(0xF004D)      // md-arrow_left
+var GLYPH_PREV = codepoint(0xF0141)      // md-chevron_left
+var GLYPH_NEXT = codepoint(0xF0142)      // md-chevron_right

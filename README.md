@@ -8,19 +8,36 @@ the top row answers "why is this crawling" the moment you open the panel.
 
 ## What it does
 
-- **Per-application download and upload rates**, attributed to a real process
-  name, refreshed every couple of seconds.
-- **Ranked by current rate, not session total**, so an overnight backup that
-  has gone quiet does not sit on top of the video call that is actually
-  saturating the link.
-- **Session totals per application**, kept after the connections close, so an
-  app that woke up, moved 400 MB and went back to sleep is still visible.
-- **Bar label** showing the combined rate, download only, or the name of the
-  current worst offender. It holds a fixed width, so the widget does not
-  resize and shunt its neighbours along the bar every time the rate crosses a
-  digit or a unit.
-- **A warning** when one application sustains more than a rate you choose,
-  which is the number that matters on a tethered or metered connection.
+**Right now.** Applications ranked by what is moving this second, with
+connection counts and a live rate in the bar. The bar label holds a fixed
+width, so the widget does not resize and shunt its neighbours along every time
+the rate crosses a digit or a unit.
+
+**Today.** A ring of the day's traffic by application with a legend, the week
+it sits in as a bar chart, and the four numbers worth knowing: the top app and
+its share, the change since yesterday, the busiest day of the week, and the
+download against upload split.
+
+**This year.** Every month as a bar, and a grid of insight cards: total moved,
+busiest months, days with traffic out of days observed, peak day, longest
+streak, average day, top app, and how much could not be attributed at all.
+
+Use the calendar button in the panel to move between today and the year, and
+the arrows to step through years.
+
+## Where the history lives
+
+`~/.config/omarchy/siphon/history.json`, written at most once every twenty
+seconds and once more on shutdown.
+
+Raw per-day detail is kept for 95 days. When a day falls out of that window its
+per-app breakdown is folded into its month and its totals stay at day
+resolution, so the calendar charts keep a bar for every day while the file
+cannot grow without bound. A day exists in exactly one of the two places, which
+is what stops a byte being counted twice at the boundary.
+
+Nothing leaves the machine. The plugin makes no network connections of its own;
+it only reads the kernel's account of the ones other programs made.
 
 ## What it cannot measure, and says so
 
@@ -79,15 +96,18 @@ cat /proc/net/dev  # what the interfaces themselves counted
 ## Tests
 
 ```bash
-node test/model.test.js    # 36 tests, no compositor
+node test/model.test.js    # 42 tests, no compositor
+node test/history.test.js  # 28 tests for the stored history
 node test/wiring.test.js   # cross-file checks: QML parses, bindings resolve
 node test/live.js 5        # drives the model against this machine's sockets
 ```
 
-`model.test.js` covers the parsing and accounting rules. `wiring.test.js`
-covers what only breaks when two files disagree: QML that stopped parsing, a
-renamed Model function the panel still calls, a setting offered in the manifest
-that no code reads.
+`model.test.js` covers sampling, attribution and presentation.
+`history.test.js` covers what is written to disk, what happens at the retention
+boundary, and every insight. `wiring.test.js` covers what only breaks when two
+files disagree: QML that stopped parsing, a renamed function the panel still
+calls, a setting offered in the manifest that no code reads, and a `Service {}`
+declared in the panel, which the bar would build twice.
 
 ## Licence
 

@@ -315,3 +315,72 @@ function unattributedShare(bucket) {
   var seen = bucket.rx + bucket.tx + loose
   return seen > 0 ? loose / seen : 0
 }
+
+function yearRange(year) {
+  return { from: year + "-01-01", to: year + "-12-31" }
+}
+
+// Everything the year view puts on a card. Numbers only: the panel owns the
+// prose and the units, so these stay comparable and testable.
+function yearInsights(history, year) {
+  var range = yearRange(year)
+  var series = daySeries(history, range.from, range.to)
+  var today = dayKey(new Date())
+  var tracked = []
+  for (var i = 0; i < series.length; i++) {
+    if (series[i].key <= today) tracked.push(series[i])
+  }
+  var months = monthSeries(history, year)
+  var ranked = months.slice().sort(function (a, b) { return b.total - a.total })
+  var busiest = []
+  for (var m = 0; m < ranked.length && busiest.length < 2; m++) {
+    if (ranked[m].total > 0) busiest.push(ranked[m])
+  }
+  var quietMonth = null
+  for (var q = 0; q < months.length; q++) {
+    if (months[q].total <= 0) continue
+    if (!quietMonth || months[q].total < quietMonth.total) quietMonth = months[q]
+  }
+  var bucket = yearTotals(history, year)
+  return {
+    year: year,
+    total: bucket.rx + bucket.tx,
+    rx: bucket.rx,
+    tx: bucket.tx,
+    trackedDays: tracked.length,
+    activeDays: activeDays(tracked),
+    peak: peakDay(tracked),
+    quietest: quietestDay(tracked),
+    streak: longestStreak(tracked),
+    averagePerActiveDay: averagePerActiveDay(tracked),
+    topMonths: busiest,
+    quietestMonth: quietMonth,
+    unattributedShare: unattributedShare(bucket),
+    apps: rankApps(bucket, 0)
+  }
+}
+
+// Everything the today view needs, including the week it sits in.
+function dayInsights(history, key) {
+  var bucket = dayTotals(history, key)
+  var start = weekStart(key, 1)
+  var week = daySeries(history, start, shiftDays(start, 6))
+  var yesterday = dayTotals(history, shiftDays(key, -1))
+  var ranked = rankApps(bucket, 0)
+  var busiest = peakDay(week)
+  return {
+    key: key,
+    total: bucket.rx + bucket.tx,
+    rx: bucket.rx,
+    tx: bucket.tx,
+    detailed: bucket.detailed,
+    apps: ranked,
+    topApp: ranked.length > 0 && ranked[0].total > 0 ? ranked[0] : null,
+    week: week,
+    weekStartKey: start,
+    yesterday: yesterday.rx + yesterday.tx,
+    change: (bucket.rx + bucket.tx) - (yesterday.rx + yesterday.tx),
+    busiestOfWeek: busiest,
+    unattributedShare: unattributedShare(bucket)
+  }
+}
