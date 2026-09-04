@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "wian47.siphon",
+  "name": "Siphon",
+  "version": "0.1.0",
+  "author": "Wian Schoeman",
+  "license": "MIT",
+  "homepage": "https://github.com/Wian47/omarchy-siphon",
+  "description": "Which app is eating your bandwidth, live in the Omarchy bar.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Siphon",
+    "description": "Per-application upload and download rates, ranked worst first, so you can see what is draining a tethered or metered connection.",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "barLabel": "total",
+      "refreshIntervalSec": 2,
+      "notifyThresholdMbps": 0
+    },
+    "schema": [
+      {
+        "key": "barLabel",
+        "type": "enum",
+        "label": "Text beside the icon",
+        "options": [
+          "none",
+          "total",
+          "down",
+          "top-app"
+        ],
+        "defaultValue": "total",
+        "description": "Show the combined rate, download only, or the name of the heaviest app. Vertical bars stay icon-only."
+      },
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Sample interval (seconds)",
+        "min": 1,
+        "max": 30,
+        "step": 1,
+        "defaultValue": 2,
+        "description": "How often per-process traffic is re-sampled."
+      },
+      {
+        "key": "notifyThresholdMbps",
+        "type": "integer",
+        "label": "Warn above (Mbps)",
+        "min": 0,
+        "max": 1000,
+        "step": 1,
+        "defaultValue": 0,
+        "description": "Notify when a single app sustains more than this. Zero disables the warning."
+      }
+    ]
+  }
+}
