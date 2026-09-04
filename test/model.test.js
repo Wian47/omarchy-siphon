@@ -411,6 +411,28 @@ test("a name too long to fit is cut with an ellipsis rather than overflowing", (
 
 console.log("\nModel presentation helpers")
 
+// The panel used to keep a separate name-to-colour map, which could lag the
+// list it was keyed against and hand a delegate an undefined colour. Carrying
+// the colour on the item removes the second lookup entirely.
+test("every app carries its own colour, so nothing has to be looked up", () => {
+  const apps = [
+    { name: "brave", rx: 10, tx: 1, total: 11, share: 0.5 },
+    { name: "curl", rx: 9, tx: 2, total: 11, share: 0.5 }
+  ]
+  const withColors = api.withColors(apps)
+  assert.strictEqual(withColors.length, 2)
+  for (const app of withColors) {
+    assert.ok(/^#[0-9a-f]{6}$/.test(app.color), `${app.name} has no colour`)
+  }
+  assert.notStrictEqual(withColors[0].color, withColors[1].color)
+  assert.strictEqual(withColors[0].total, 11, "the rest of the fields survive")
+  assert.strictEqual(withColors[0].share, 0.5)
+})
+
+test("an empty list of apps colours nothing rather than throwing", () => {
+  assert.deepStrictEqual(api.withColors([]), [])
+})
+
 test("colours in one chart are all different", () => {
   const apps = ["brave", "spotify", "curl", "claude", "t3code", "quickshell", "gvfsd-smb"]
     .map(name => ({ name }))

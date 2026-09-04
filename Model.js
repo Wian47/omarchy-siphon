@@ -398,6 +398,28 @@ function assignColors(apps) {
   return out
 }
 
+// Returns the apps with their colour already on them. The panel used to hold
+// a separate name-to-colour map and look each delegate up in it, which left a
+// window where a delegate had been built for a new app but the map had not yet
+// recomputed, and the dot came out undefined. One list means nothing to go
+// stale against.
+function withColors(apps) {
+  var assigned = assignColors(apps)
+  var out = []
+  for (var i = 0; i < apps.length; i++) {
+    var app = apps[i]
+    out.push({
+      name: app.name,
+      rx: app.rx,
+      tx: app.tx,
+      total: app.total,
+      share: app.share,
+      color: assigned[app.name]
+    })
+  }
+  return out
+}
+
 function formatShare(fraction) {
   var percent = Math.max(0, Math.min(1, fraction || 0)) * 100
   return (percent >= 10 || percent === 0 ? percent.toFixed(0) : percent.toFixed(1)) + "%"

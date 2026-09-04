@@ -96,7 +96,7 @@ cat /proc/net/dev  # what the interfaces themselves counted
 ## Tests
 
 ```bash
-node test/model.test.js    # 42 tests, no compositor
+node test/model.test.js    # 44 tests, no compositor
 node test/history.test.js  # 28 tests for the stored history
 node test/wiring.test.js   # cross-file checks: QML parses, bindings resolve
 node test/live.js 5        # drives the model against this machine's sockets

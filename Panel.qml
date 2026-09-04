@@ -63,8 +63,7 @@ Panel {
   property string shownYear: History.yearOf(todayKey)
 
   readonly property var today: History.dayInsights(history, todayKey)
-  readonly property var todayApps: today.apps.slice(0, 7)
-  readonly property var todayColors: Model.assignColors(todayApps)
+  readonly property var todayApps: Model.withColors(today.apps.slice(0, 7))
   readonly property var year: History.yearInsights(history, shownYear)
 
   onTrafficChanged: if (traffic) traffic.settings = root.settings
@@ -275,7 +274,7 @@ Panel {
                       ctx.beginPath()
                       ctx.arc(mid, mid, (outer + inner) / 2, angle, angle + sweep)
                       ctx.lineWidth = outer - inner
-                      ctx.strokeStyle = root.todayColors[slices[i].name]
+                      ctx.strokeStyle = slices[i].color
                       ctx.stroke()
                       angle += sweep
                     }
@@ -320,7 +319,7 @@ Panel {
                         width: Style.space(6)
                         height: width
                         radius: width / 2
-                        color: root.todayColors[modelData.name]
+                        color: modelData.color
                       }
 
                       Text {
