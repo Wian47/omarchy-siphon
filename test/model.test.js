@@ -232,6 +232,38 @@ test("a machine with no QUIC in flight names nobody", () => {
   assert.deepStrictEqual(api.udpOwners("0 0 10.0.0.69%wlo1:68 10.0.0.1:67"), [])
 })
 
+console.log("\nModel.parseSample")
+
+test("splits one command's output into sockets, UDP owners and interfaces", () => {
+  const text = [
+    tcp({ app: "brave", pid: 1, sent: 10, recv: 20 }),
+    "#udp",
+    '0 0 10.0.0.69:56068 35.186.224.26:443 users:(("spotify",pid=428385,fd=35))',
+    "#dev",
+    NET_DEV
+  ].join("\n")
+  const parsed = api.parseSample(text, 1234)
+  assert.strictEqual(parsed.complete, true)
+  assert.strictEqual(parsed.atMs, 1234)
+  assert.deepStrictEqual(parsed.sockets.map(s => s.app), ["brave"])
+  assert.deepStrictEqual(parsed.udp.map(u => u.name), ["spotify"])
+  assert.strictEqual(parsed.iface.rx, 65770024774 + 2115913)
+})
+
+test("a truncated read is marked incomplete rather than counted as idle", () => {
+  const parsed = api.parseSample(tcp({ recv: 500 }), 1)
+  assert.strictEqual(parsed.complete, false)
+  assert.deepStrictEqual(parsed.sockets, [], "half a sample must not look like zero traffic")
+})
+
+test("the sample command asks for exactly the three inputs the model parses", () => {
+  const command = api.sampleCommand()
+  assert.strictEqual(command[0], "sh")
+  assert.match(command[2], /ss -tinpH/)
+  assert.match(command[2], /ss -unpH/)
+  assert.match(command[2], /\/proc\/net\/dev/)
+})
+
 console.log("\nModel.ranked")
 
 test("ranks by current rate, not by session total", () => {
@@ -277,6 +309,36 @@ test("sizes and rates use the same ladder with different tails", () => {
 test("a negative or missing number formats as zero rather than NaN", () => {
   assert.strictEqual(api.formatRate(-5), "0 B/s")
   assert.strictEqual(api.formatBytes(undefined), "0 B")
+})
+
+console.log("\nModel.summary")
+
+test("summary says what is happening in a sentence", () => {
+  assert.strictEqual(api.summary(api.emptyState()), "Sampling")
+  const idle = prime([{ key: "a", app: "brave", pid: 1, sent: 0, recv: 0 }])
+  assert.strictEqual(api.summary(idle), "Nothing is using the network")
+  const busy = api.applySample(idle, sample(1000, [
+    { key: "a", app: "brave", pid: 1, sent: 2000, recv: 8000 }
+  ]))
+  assert.strictEqual(api.summary(busy), "8.00 kB/s down, 2.00 kB/s up")
+})
+
+test("traffic nobody can be charged for is still reported, not called idle", () => {
+  const first = prime([], { rx: 0, tx: 0 })
+  const loose = api.applySample(first, sample(1000, [], { rx: 5000, tx: 2000 }))
+  assert.strictEqual(api.summary(loose), "5.00 kB/s down, 2.00 kB/s up, none of it attributable")
+})
+
+test("the unmeasured note names who holds QUIC sockets and stops at three", () => {
+  const none = prime([])
+  assert.strictEqual(api.unmeasuredNote(none), "")
+  const four = api.applySample(none, sample(1000, [], { rx: 0, tx: 0 }, [
+    { name: "spotify", pid: 1, sockets: 5 },
+    { name: "brave", pid: 2, sockets: 2 },
+    { name: "chrome", pid: 3, sockets: 1 },
+    { name: "steam", pid: 4, sockets: 1 }
+  ]))
+  assert.strictEqual(api.unmeasuredNote(four), "spotify, brave, chrome and 1 more")
 })
 
 console.log("\nModel.barLabel")

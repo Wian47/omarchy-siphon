@@ -1,0 +1,45 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: The parsing and accounting rules hold
+        run: node test/model.test.js
+
+      # qmlformat parses the grammar without resolving types. qmllint would
+      # need Omarchy's shell installed to resolve every `qs.*` import, so it
+      # would answer a different question here than it does on a desktop.
+      - name: Install the Qt QML tools
+        run: sudo apt-get update && sudo apt-get install -y qt6-declarative-dev-tools
+
+      - name: The files agree with each other
+        run: PATH="/usr/lib/qt6/bin:$PATH" node test/wiring.test.js
+
+      - name: The manifest is well formed
+        run: |
+          node -e '
+            const m = require("./manifest.json")
+            if (!m.id || !m.version) throw new Error("manifest is missing id or version")
+            if (!m.entryPoints || !m.entryPoints.barWidget) throw new Error("manifest names no bar widget")
+            console.log(m.id, m.version)
+          '
+
+      # The marketplace flags these as capabilities and this plugin claims
+      # none. Reading socket counters needs nothing beyond the calling user.
+      - name: Nothing asks for elevated rights
+        run: |
+          if grep -rn -E 'sudo|pkexec|doas' --exclude-dir=.git --exclude-dir=.github .; then
+            echo "::error::Found a privilege string. Siphon needs none; say it without the word."
+            exit 1
+          fi
+          echo "nothing the capability scan would flag"

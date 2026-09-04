@@ -1,5 +1,16 @@
 .pragma library
 
+function codepoint(code) {
+  if (String.fromCodePoint) return String.fromCodePoint(code)
+  var offset = code - 0x10000
+  return String.fromCharCode(0xD800 + (offset >> 10), 0xDC00 + (offset & 0x3FF))
+}
+
+var GLYPH_NETWORK = codepoint(0xF04E1)  // md-swap_horizontal
+var GLYPH_DOWN = codepoint(0xF0045)     // md-arrow_down
+var GLYPH_UP = codepoint(0xF005D)       // md-arrow_up
+var GLYPH_RESET = codepoint(0xF0450)    // md-refresh
+
 var LOOPBACK = /^(127\.|\[?::1\]?$|\[::1\])/
 var VIRTUAL = /^(lo|docker|br-|veth|virbr|vnet)/
 
@@ -95,6 +106,30 @@ function udpOwners(text) {
     return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   })
   return out
+}
+
+var UDP_MARK = "#udp"
+var DEV_MARK = "#dev"
+
+function sampleCommand() {
+  return ["sh", "-c",
+    "ss -tinpH; echo '" + UDP_MARK + "'; ss -unpH; echo '" + DEV_MARK + "'; cat /proc/net/dev"]
+}
+
+function parseSample(text, atMs) {
+  var body = String(text || "")
+  var udpAt = body.indexOf("\n" + UDP_MARK)
+  var devAt = body.indexOf("\n" + DEV_MARK)
+  if (udpAt < 0 || devAt < 0 || devAt < udpAt) {
+    return { atMs: atMs, sockets: [], udp: [], iface: { rx: 0, tx: 0 }, complete: false }
+  }
+  return {
+    atMs: atMs,
+    sockets: parseSockets(body.slice(0, udpAt)),
+    udp: udpOwners(body.slice(udpAt + UDP_MARK.length + 1, devAt)),
+    iface: parseNetDev(body.slice(devAt + DEV_MARK.length + 1)),
+    complete: true
+  }
 }
 
 function socketDelta(previous, current) {
@@ -241,6 +276,28 @@ function formatRate(bytesPerSecond) {
 
 function formatBytes(bytes) {
   return scale(bytes, SIZE_UNITS)
+}
+
+function summary(state) {
+  if (!state.primed) return "Sampling"
+  var total = totalRate(state)
+  var loose = state.unattributed.rxRate + state.unattributed.txRate
+  if (total.rx + total.tx > 0) {
+    return formatRate(total.rx) + " down, " + formatRate(total.tx) + " up"
+  }
+  if (loose > 0) {
+    return formatRate(state.unattributed.rxRate) + " down, "
+      + formatRate(state.unattributed.txRate) + " up, none of it attributable"
+  }
+  return "Nothing is using the network"
+}
+
+function unmeasuredNote(state) {
+  if (!state.udp || state.udp.length === 0) return ""
+  var names = []
+  for (var i = 0; i < state.udp.length && i < 3; i++) names.push(state.udp[i].name)
+  var more = state.udp.length - names.length
+  return names.join(", ") + (more > 0 ? " and " + more + " more" : "")
 }
 
 function barLabel(state, mode) {
