@@ -25,11 +25,11 @@ Panel {
 
   readonly property bool vertical: bar ? bar.vertical : false
   readonly property string labelMode: vertical ? "none" : String(setting("barLabel", "total"))
-  readonly property string barLabel: Model.barLabel(traffic.state, labelMode)
-  readonly property string barTooltip: Model.summary(traffic.state)
+  readonly property string barLabel: Model.barLabel(root.live, labelMode)
+  readonly property string barTooltip: Model.summary(root.live)
 
-  readonly property var apps: traffic.apps
-  readonly property real warnRate: traffic.warnBytesPerSecond
+  readonly property var apps: traffic ? traffic.apps : []
+  readonly property real warnRate: traffic ? traffic.warnBytesPerSecond : 0
   readonly property bool overThreshold: warnRate > 0 && apps.length > 0
     && (apps[0].rxRate + apps[0].txRate) >= warnRate
 
@@ -38,16 +38,29 @@ Panel {
   implicitWidth: button.item ? button.item.implicitWidth : 0
   implicitHeight: button.item ? button.item.implicitHeight : (bar ? bar.barSize : Style.bar.sizeHorizontal)
 
-  Service {
-    id: traffic
-    settings: root.settings
-    watchClosely: root.opened
+  // The shell loads a plugin's "service" entry point exactly once and hands
+  // the same instance to every widget that asks. The bar creates this panel
+  // more than once, and two samplers writing one history file would race each
+  // other, so the single instance has to come from the shell rather than from
+  // a `Service {}` declared here.
+  readonly property var traffic: bar && bar.shell ? bar.shell.serviceFor("wian47.siphon") : null
+  readonly property bool ready: traffic ? traffic.loaded : false
+  readonly property var live: traffic ? traffic.state : Model.emptyState()
+  readonly property var udp: traffic ? traffic.udp : []
+  readonly property var unattributed: traffic
+    ? traffic.unattributed
+    : ({ rx: 0, tx: 0, rxRate: 0, txRate: 0 })
+  readonly property string serviceError: traffic ? traffic.lastError : ""
+
+  onTrafficChanged: if (traffic) traffic.settings = root.settings
+  onOpenedChanged: {
+    if (!traffic) return
+    traffic.watchClosely = opened
+    if (opened) traffic.sample()
   }
 
-  onOpenedChanged: if (opened) traffic.sample()
-
   function handleBarPress(buttonCode) {
-    if (buttonCode === Qt.MiddleButton) traffic.reset()
+    if (buttonCode === Qt.MiddleButton) { if (traffic) traffic.reset() }
     else root.toggle()
   }
 
@@ -100,7 +113,7 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onTextKey: function (text) {
-        if (text === "r" || text === "R") traffic.reset()
+        if ((text === "r" || text === "R") && root.traffic) root.traffic.reset()
       }
 
       Flickable {
@@ -122,7 +135,7 @@ Panel {
           PanelHero {
             width: parent.width
             title: "Network by application"
-            meta: Model.summary(traffic.state)
+            meta: Model.summary(root.live)
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconComponent: Component {
@@ -139,15 +152,15 @@ Panel {
                 iconText: Model.GLYPH_RESET
                 tooltipText: "Reset the session totals"
                 foreground: root.foreground
-                onClicked: traffic.reset()
+                onClicked: if (root.traffic) root.traffic.reset()
               }
             }
           }
 
           Text {
             width: parent.width
-            visible: traffic.lastError !== ""
-            text: traffic.lastError
+            visible: root.serviceError !== ""
+            text: root.serviceError
             color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -156,7 +169,7 @@ Panel {
 
           Text {
             width: parent.width
-            visible: traffic.loaded && root.apps.length === 0
+            visible: root.ready && root.apps.length === 0
             text: "No application holds a network connection right now."
             color: root.dim
             font.family: root.fontFamily
@@ -225,13 +238,13 @@ Panel {
 
           PanelSeparator {
             width: parent.width
-            visible: traffic.unattributed.rxRate > 0 || traffic.udp.length > 0
+            visible: root.unattributed.rxRate > 0 || root.udp.length > 0
             foreground: root.foreground
           }
 
           PanelSectionHeader {
             width: parent.width
-            visible: traffic.unattributed.rxRate > 0 || traffic.udp.length > 0
+            visible: root.unattributed.rxRate > 0 || root.udp.length > 0
             text: "Not attributable"
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -245,11 +258,11 @@ Panel {
           // be the dishonest one.
           Text {
             width: parent.width
-            visible: traffic.unattributed.rxRate > 0 || traffic.udp.length > 0
+            visible: root.unattributed.rxRate > 0 || root.udp.length > 0
             text: {
-              var rate = Model.GLYPH_DOWN + " " + Model.formatRate(traffic.unattributed.rxRate)
-                + "   " + Model.GLYPH_UP + " " + Model.formatRate(traffic.unattributed.txRate)
-              var who = Model.unmeasuredNote(traffic.state)
+              var rate = Model.GLYPH_DOWN + " " + Model.formatRate(root.unattributed.rxRate)
+                + "   " + Model.GLYPH_UP + " " + Model.formatRate(root.unattributed.txRate)
+              var who = Model.unmeasuredNote(root.live)
               return who === ""
                 ? rate + "\nPacket headers and connections owned by other users."
                 : rate + "\nQUIC from " + who + ", packet headers, and other users."

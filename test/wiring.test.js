@@ -121,11 +121,38 @@ check("every service property the panel binds to exists", () => {
   return problems
 })
 
-check("the panel instantiates the service it binds to", () => {
-  if (!/\bService\s*\{[\s\S]*?id:\s*traffic\b/.test(panelSource)) {
-    return ["Panel.qml binds to `traffic` but never declares `Service { id: traffic }`"]
+// The bar creates the panel more than once. A `Service {}` declared inside it
+// is therefore created more than once too, and two samplers writing one
+// history file race each other and double the `ss` spawns. The shell loads a
+// plugin's "service" entry point exactly once, so the instance has to come
+// from there.
+check("the panel takes the shared service rather than making its own", () => {
+  const problems = []
+  const code = panelSource.split("\n").map(stripComment).join("\n")
+  if (/\bService\s*\{/.test(code)) {
+    problems.push("Panel.qml declares `Service {}`; the bar builds the panel more than once, so this yields two samplers")
   }
-  return []
+  if (!panelSource.includes(`serviceFor("${manifest.id}")`)) {
+    problems.push(`Panel.qml never calls serviceFor("${manifest.id}"), so it has no service to read`)
+  }
+  return problems
+})
+
+check("the manifest declares the service the panel asks the shell for", () => {
+  const problems = []
+  if (!Array.isArray(manifest.kinds) || manifest.kinds.indexOf("service") < 0) {
+    problems.push("manifest kinds does not include \"service\", so the shell will never load one")
+  }
+  if (!manifest.entryPoints || manifest.entryPoints.service !== "Service.qml") {
+    problems.push("manifest entryPoints.service does not name Service.qml")
+  }
+  return problems
+})
+
+check("every file the manifest names exists", () => {
+  return Object.values(manifest.entryPoints || {})
+    .filter(file => !fs.existsSync(path.join(root, file)))
+    .map(file => `entryPoints names ${file}, which is not in the plugin`)
 })
 
 check("the manifest's settings and the code agree", () => {
@@ -166,7 +193,7 @@ check("the manifest's id matches what the panel registers", () => {
 const FORBIDDEN = ["su" + "do", "pk" + "exec", "do" + "as"]
 
 check("no string that blocks marketplace verification", () => {
-  const scanned = ["README.md", "Model.js", "Service.qml", "Panel.qml", "manifest.json"]
+  const scanned = ["README.md", "Model.js", "History.js", "Service.qml", "Panel.qml", "manifest.json"]
   return scanned.flatMap(file => read(file).split("\n").flatMap((line, index) => FORBIDDEN
     .filter(word => line.includes(word))
     .map(word => `${file}:${index + 1}: "${word}" is a word the capability scan flags, say it without the word`)))

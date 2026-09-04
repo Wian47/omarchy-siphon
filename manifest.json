@@ -8,9 +8,11 @@
   "homepage": "https://github.com/Wian47/omarchy-siphon",
   "description": "Which app is eating your bandwidth, live in the Omarchy bar.",
   "kinds": [
+    "service",
     "bar-widget"
   ],
   "entryPoints": {
+    "service": "Service.qml",
     "barWidget": "Panel.qml"
   },
   "barWidget": {
