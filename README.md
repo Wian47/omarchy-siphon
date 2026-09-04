@@ -16,7 +16,9 @@ the top row answers "why is this crawling" the moment you open the panel.
 - **Session totals per application**, kept after the connections close, so an
   app that woke up, moved 400 MB and went back to sleep is still visible.
 - **Bar label** showing the combined rate, download only, or the name of the
-  current worst offender.
+  current worst offender. It holds a fixed width, so the widget does not
+  resize and shunt its neighbours along the bar every time the rate crosses a
+  digit or a unit.
 - **A warning** when one application sustains more than a rate you choose,
   which is the number that matters on a tethered or metered connection.
 
@@ -77,7 +79,7 @@ cat /proc/net/dev  # what the interfaces themselves counted
 ## Tests
 
 ```bash
-node test/model.test.js    # 32 tests, no compositor
+node test/model.test.js    # 36 tests, no compositor
 node test/wiring.test.js   # cross-file checks: QML parses, bindings resolve
 node test/live.js 5        # drives the model against this machine's sockets
 ```

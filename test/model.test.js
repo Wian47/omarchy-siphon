@@ -343,6 +343,22 @@ test("the unmeasured note names who holds QUIC sockets and stops at three", () =
 
 console.log("\nModel.barLabel")
 
+// The label padding character, asserted here so a change to it fails loudly
+// rather than silently widening every label by nothing.
+const PAD = "\u00a0"
+
+test("padding uses a character Qt will not trim", () => {
+  assert.strictEqual(api.PAD, PAD)
+})
+
+function busyState(rx, tx, name) {
+  const app = name || "brave"
+  const first = prime([{ key: "a", app: app, pid: 1, sent: 0, recv: 0 }])
+  return api.applySample(first, sample(1000, [
+    { key: "a", app: app, pid: 1, sent: tx, recv: rx }
+  ]))
+}
+
 test("each label mode says what it promises", () => {
   const first = prime([
     { key: "a", app: "brave", pid: 1, sent: 0, recv: 0 },
@@ -355,13 +371,42 @@ test("each label mode says what it promises", () => {
   assert.strictEqual(api.barLabel(state, "none"), "")
   assert.strictEqual(api.barLabel(state, "down"), "4.50 kB/s")
   assert.strictEqual(api.barLabel(state, "total"), "5.50 kB/s")
-  assert.strictEqual(api.barLabel(state, "top-app"), "brave")
+  assert.strictEqual(api.barLabel(state, "top-app"), "brave" + PAD.repeat(5))
 })
 
 test("an idle machine names no top app", () => {
   const state = prime([{ key: "a", app: "brave", pid: 1, sent: 0, recv: 0 }])
-  assert.strictEqual(api.barLabel(state, "top-app"), "")
-  assert.strictEqual(api.barLabel(state, "total"), "0 B/s")
+  assert.strictEqual(api.barLabel(state, "top-app"), PAD.repeat(10))
+  assert.strictEqual(api.barLabel(state, "total"), PAD.repeat(4) + "0 B/s")
+})
+
+// The bar font is monospace, so equal character counts are equal pixel widths.
+// Unpadded, the widget resizes every time the rate crosses a digit or a unit
+// and shunts the icons beside it along the bar.
+test("a rate label is the same width at every magnitude", () => {
+  const widths = new Set()
+  for (let exponent = 0; exponent < 16; exponent++) {
+    for (const mantissa of [1, 1.5, 9.99, 12.3, 99, 125, 999]) {
+      const rate = mantissa * Math.pow(10, exponent)
+      widths.add(api.barLabel(busyState(rate, 0), "down").length)
+      widths.add(api.barLabel(busyState(rate, rate), "total").length)
+    }
+  }
+  widths.add(api.barLabel(prime([]), "total").length)
+  assert.deepStrictEqual([...widths], [9], `rate labels varied in width: ${[...widths]}`)
+})
+
+test("an app-name label is the same width whatever the app is called", () => {
+  const widths = new Set()
+  for (const name of ["v", "brave", "gvfsd-smb", "claude-desktop", "a".repeat(60)]) {
+    widths.add(api.barLabel(busyState(5000, 0, name), "top-app").length)
+  }
+  widths.add(api.barLabel(prime([]), "top-app").length)
+  assert.deepStrictEqual([...widths], [10], `name labels varied in width: ${[...widths]}`)
+})
+
+test("a name too long to fit is cut with an ellipsis rather than overflowing", () => {
+  assert.strictEqual(api.barLabel(busyState(5000, 0, "claude-desktop"), "top-app"), "claude-de\u2026")
 })
 
 console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`)

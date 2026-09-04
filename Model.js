@@ -256,7 +256,7 @@ function totalRate(state) {
   return { rx: rx, tx: tx }
 }
 
-var RATE_UNITS = ["B/s", "kB/s", "MB/s", "GB/s"]
+var RATE_UNITS = ["B/s", "kB/s", "MB/s", "GB/s", "TB/s"]
 var SIZE_UNITS = ["B", "kB", "MB", "GB", "TB"]
 
 function scale(value, units) {
@@ -300,13 +300,37 @@ function unmeasuredNote(state) {
   return names.join(", ") + (more > 0 ? " and " + more + " more" : "")
 }
 
+// The bar font is monospace, so a label of a constant number of characters is
+// a label of a constant width. Every mode pads to its own budget: without it
+// the widget resizes each time the rate crosses a digit or a unit, and the
+// icons to its left shuffle along with it.
+var RATE_WIDTH = 9
+var NAME_WIDTH = 10
+
+// Pads short text and cuts long text, so the result is always exactly `width`
+// characters. Cutting only bites at rates no interface can reach, but making
+// it an invariant of the function beats reasoning about which ones can.
+//
+// The padding is a no-break space rather than a plain one. Qt drops trailing
+// whitespace when it measures a string, which would collapse the padding on
+// exactly the short labels it exists to widen.
+var PAD = "\u00a0"
+
+function fixedWidth(text, width, alignRight) {
+  var out = String(text)
+  if (out.length > width) out = out.slice(0, width - 1) + "\u2026"
+  while (out.length < width) out = alignRight ? PAD + out : out + PAD
+  return out
+}
+
 function barLabel(state, mode) {
   if (mode === "none") return ""
   var total = totalRate(state)
-  if (mode === "down") return formatRate(total.rx)
   if (mode === "top-app") {
     var top = ranked(state)[0]
-    return top && (top.rxRate + top.txRate) > 0 ? top.name : ""
+    var name = top && (top.rxRate + top.txRate) > 0 ? top.name : ""
+    return fixedWidth(name, NAME_WIDTH, false)
   }
-  return formatRate(total.rx + total.tx)
+  var rate = mode === "down" ? total.rx : total.rx + total.tx
+  return fixedWidth(formatRate(rate), RATE_WIDTH, true)
 }
