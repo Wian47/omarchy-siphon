@@ -28,6 +28,11 @@ jobs:
       - name: The files agree with each other
         run: PATH="/usr/lib/qt6/bin:$PATH" node test/wiring.test.js
 
+      # A check nobody has watched fail is a check nobody knows works. This
+      # breaks each invariant in turn and expects the suite to notice.
+      - name: The checks catch the breaks they exist for
+        run: PATH="/usr/lib/qt6/bin:$PATH" bash test/prove-checks.sh
+
       - name: The manifest is well formed
         run: |
           node -e '

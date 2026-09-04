@@ -199,6 +199,21 @@ check("no string that blocks marketplace verification", () => {
     .map(word => `${file}:${index + 1}: "${word}" is a word the capability scan flags, say it without the word`)))
 })
 
+// Named reads, so widening what the plugin looks at cannot pass unnoticed.
+check("the sampler reads only what it claims to read", () => {
+  const source = modelSource.replace(/^\.pragma library\s*$/m, "")
+  const names = [
+    ...source.matchAll(/^function ([A-Za-z_$][\w$]*)/gm),
+    ...source.matchAll(/^var ([A-Za-z_$][\w$]*)/gm)
+  ].map(m => m[1])
+  const Model = new Function(source + "\nreturn {" + names.map(n => `${n}: ${n}`).join(",") + "};")()
+  const reads = Model.sampleCommand()[2].split(";").map(part => part.trim())
+  const allowed = ["ss -tinpH", "echo '#udp'", "ss -unpH", "echo '#dev'", "cat /proc/net/dev"]
+  return reads.length === allowed.length && reads.every((part, i) => part === allowed[i])
+    ? []
+    : [`the sample command runs ${JSON.stringify(reads)}, not the read-only sequence the README documents`]
+})
+
 // The markers are `#udp` and `#dev`, and `#` opens a comment in sh. Unquoted,
 // the shell swallows both and every sample parses as incomplete, which the
 // widget shows as a permanent "could not read the socket table". Nothing that

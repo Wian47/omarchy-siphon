@@ -2,6 +2,8 @@
 
 Which application is eating your bandwidth, live in the Omarchy bar.
 
+![The panel: today's traffic as a ring of applications, the week around it, and the live per-application rates underneath](preview.png)
+
 Every other network widget tells you *how fast* the link is going. Siphon tells
 you *who is doing it*. Applications are ranked by what is moving right now, so
 the top row answers "why is this crawling" the moment you open the panel.
@@ -100,6 +102,7 @@ node test/model.test.js    # 44 tests, no compositor
 node test/history.test.js  # 28 tests for the stored history
 node test/wiring.test.js   # cross-file checks: QML parses, bindings resolve
 node test/live.js 5        # drives the model against this machine's sockets
+bash test/prove-checks.sh # breaks each invariant, expects the suite to notice
 ```
 
 `model.test.js` covers sampling, attribution and presentation.
