@@ -81,6 +81,29 @@ ss -unpH           # UDP sockets and their owners, for the unmeasured note
 cat /proc/net/dev  # what the interfaces themselves counted
 ```
 
+## Install
+
+```bash
+omarchy plugin add https://github.com/Wian47/omarchy-siphon.git --enable
+```
+
+Needs Omarchy 4 (Quattro) and `iproute2`, both standard. It calls `ss` and
+reads `/proc/net/dev`, and nothing else. Nothing runs with elevated rights.
+
+Adding a widget to the bar needs a full shell restart rather than a plugin
+rescan:
+
+```bash
+omarchy restart shell
+```
+
+To remove it:
+
+```bash
+omarchy plugin remove wian47.siphon
+rm -rf ~/.config/omarchy/siphon    # optional: forget the recorded history
+```
+
 ## Settings
 
 | Setting | Default | What it does |
