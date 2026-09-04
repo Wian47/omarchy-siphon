@@ -148,6 +148,7 @@ function emptyState() {
     iface: { rx: 0, tx: 0 },
     unattributed: { rx: 0, tx: 0, rxRate: 0, txRate: 0 },
     udp: [],
+    delta: { apps: {}, unattributed: { rx: 0, tx: 0 } },
     primed: false
   }
 }
@@ -166,7 +167,11 @@ function applySample(state, sample) {
       txRate: 0
     },
     udp: sample.udp || [],
-    primed: true
+    primed: true,
+    // What moved during this tick alone, which is what the history layer
+    // accumulates into the current day. The running totals above are for the
+    // live panel and reset with the shell.
+    delta: { apps: {}, unattributed: { rx: 0, tx: 0 } }
   }
 
   var attributedRx = 0
@@ -196,6 +201,13 @@ function applySample(state, sample) {
     app.tx += delta.sent
     app.sockets += 1
     next.apps[s.app] = app
+
+    if (delta.recv || delta.sent) {
+      var moved = next.delta.apps[s.app] || { rx: 0, tx: 0 }
+      moved.rx += delta.recv
+      moved.tx += delta.sent
+      next.delta.apps[s.app] = moved
+    }
   }
 
   for (var name in state.apps) {
@@ -226,6 +238,8 @@ function applySample(state, sample) {
     var missTx = Math.max(0, ifaceTx - attributedTx)
     next.unattributed.rx += missRx
     next.unattributed.tx += missTx
+    next.delta.unattributed.rx = missRx
+    next.delta.unattributed.tx = missTx
     next.unattributed.rxRate = missRx / elapsed
     next.unattributed.txRate = missTx / elapsed
   }
