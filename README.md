@@ -2,7 +2,7 @@
 
 Which application is eating your bandwidth, live in the Omarchy bar.
 
-![The panel's day view: a day's traffic as a ring of applications, the week around it, and the live per-application rates underneath](preview.png)
+![The panel: the size selector and the day being read, that day's traffic as a ring of applications, the week around it, and the live per-application rates underneath](preview.png)
 
 Every other network widget tells you *how fast* the link is going. Siphon tells
 you *who is doing it*. Applications are ranked by what is moving right now, so
