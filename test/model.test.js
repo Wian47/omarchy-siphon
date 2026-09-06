@@ -377,7 +377,7 @@ test("each label mode says what it promises", () => {
 test("an idle machine names no top app", () => {
   const state = prime([{ key: "a", app: "brave", pid: 1, sent: 0, recv: 0 }])
   assert.strictEqual(api.barLabel(state, "top-app"), PAD.repeat(10))
-  assert.strictEqual(api.barLabel(state, "total"), PAD.repeat(4) + "0 B/s")
+  assert.strictEqual(api.barLabel(state, "total"), "0 B/s" + PAD.repeat(4))
 })
 
 // The bar font is monospace, so equal character counts are equal pixel widths.
@@ -394,6 +394,19 @@ test("a rate label is the same width at every magnitude", () => {
   }
   widths.add(api.barLabel(prime([]), "total").length)
   assert.deepStrictEqual([...widths], [9], `rate labels varied in width: ${[...widths]}`)
+})
+
+// The bar centres the label inside the widget, so padding on the left would
+// push the icon in off the widget's edge and open a hole between it and the
+// number. Padding on the right pins the icon and moves the slack out to the
+// edge, where it reads as the gap to the next widget.
+test("the reserved width sits after the label, never before it", () => {
+  for (const mode of ["down", "total", "top-app"]) {
+    const label = api.barLabel(busyState(500, 0), mode)
+    assert.ok(label.length > label.replace(/\u00a0+$/, "").length,
+      `${mode} produced no trailing padding to check: ${JSON.stringify(label)}`)
+    assert.ok(label[0] !== PAD, `${mode} padded on the left: ${JSON.stringify(label)}`)
+  }
 })
 
 test("an app-name label is the same width whatever the app is called", () => {

@@ -94,7 +94,7 @@ attempt "a colour scheme that hands two apps the same colour" \
   model
 
 attempt "a bar label that stops holding its width" \
-  "sed -i 's/while (out.length < width) out = alignRight ? PAD + out : out + PAD/out = out/' Model.js" \
+  "sed -i 's/while (out.length < width) out = out + PAD/out = out/' Model.js" \
   model
 
 echo

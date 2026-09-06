@@ -325,15 +325,21 @@ var NAME_WIDTH = 10
 // characters. Cutting only bites at rates no interface can reach, but making
 // it an invariant of the function beats reasoning about which ones can.
 //
+// The padding always goes on the right. The bar draws the label centred in the
+// widget, so padding on the left would open a gap between the icon and the
+// number and leave the icon floating in the middle of its own widget; padding
+// on the right pins the icon and pushes the slack out to the widget edge,
+// where it reads as the spacing between neighbouring widgets.
+//
 // The padding is a no-break space rather than a plain one. Qt drops trailing
 // whitespace when it measures a string, which would collapse the padding on
 // exactly the short labels it exists to widen.
 var PAD = "\u00a0"
 
-function fixedWidth(text, width, alignRight) {
+function fixedWidth(text, width) {
   var out = String(text)
   if (out.length > width) out = out.slice(0, width - 1) + "\u2026"
-  while (out.length < width) out = alignRight ? PAD + out : out + PAD
+  while (out.length < width) out = out + PAD
   return out
 }
 
@@ -343,10 +349,10 @@ function barLabel(state, mode) {
   if (mode === "top-app") {
     var top = ranked(state)[0]
     var name = top && (top.rxRate + top.txRate) > 0 ? top.name : ""
-    return fixedWidth(name, NAME_WIDTH, false)
+    return fixedWidth(name, NAME_WIDTH)
   }
   var rate = mode === "down" ? total.rx : total.rx + total.tx
-  return fixedWidth(formatRate(rate), RATE_WIDTH, true)
+  return fixedWidth(formatRate(rate), RATE_WIDTH)
 }
 
 // A stable colour per application, so the donut and its legend agree and an
