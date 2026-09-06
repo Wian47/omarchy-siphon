@@ -16,13 +16,17 @@ trap 'rm -rf "$LAB"' EXIT
 pass=0
 missed=0
 
+run_suite() {
+  if [ "$1" = render ]; then bash test/render.sh "$LAB/out"; else node "test/$1.test.js"; fi
+}
+
 attempt() {
   local name=$1 mutate=$2 suite=${3:-wiring}
   rm -rf "$LAB/repo"
   cp -r "$SRC" "$LAB/repo"
   rm -rf "$LAB/repo/.git"
   ( cd "$LAB/repo" && eval "$mutate" )
-  if ( cd "$LAB/repo" && node "test/$suite.test.js" >/dev/null 2>&1 ); then
+  if ( cd "$LAB/repo" && run_suite "$suite" >/dev/null 2>&1 ); then
     echo "  MISSED $name"
     missed=$((missed + 1))
   else
@@ -96,6 +100,20 @@ attempt "a colour scheme that hands two apps the same colour" \
 attempt "a bar label that stops holding its width" \
   "sed -i 's/while (out.length < width) out = out + PAD/out = out/' Model.js" \
   model
+
+# The panel is only rendered where the Qt QML tools are installed, and a suite
+# that skips cannot be watched failing.
+if command -v qml6 >/dev/null 2>&1; then
+  attempt "a week strip that stops following the day being read" \
+    "sed -i 's/readonly property bool isShown: modelData.key === root.shownDay/readonly property bool isShown: modelData.key === root.todayKey/' Panel.qml" \
+    render
+
+  attempt "a day the week has not reached offered as something to open" \
+    "sed -i 's|readonly property bool readable: modelData.key <= root.todayKey|readonly property bool readable: true|' Panel.qml" \
+    render
+else
+  echo "  skip   the two week strip breaks, qml6 is not installed"
+fi
 
 echo
 if [ "$missed" -eq 0 ]; then

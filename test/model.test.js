@@ -487,5 +487,25 @@ test("a day key reads as a date a person would say", () => {
   assert.strictEqual(api.formatDay("nonsense"), "nonsense")
 })
 
+// Three facts share one line of empty space under the ring, and the week strip
+// made two of them reachable that were not before: a day that is not today, and
+// a day inside the detail window that simply saw no traffic.
+test("an empty day says which kind of empty it is", () => {
+  assert.strictEqual(api.emptyDayNote("2026-09-05", "2026-09-05", 0, true),
+    "Nothing recorded today yet.")
+  assert.strictEqual(api.emptyDayNote("2026-09-02", "2026-09-05", 0, true),
+    "Nothing recorded on Sep 2.")
+  assert.strictEqual(api.emptyDayNote("2026-01-01", "2026-09-05", 4000000, false),
+    "This day is older than the detail window.")
+})
+
+// A day nobody has recorded is missing from the history entirely, which reads
+// back as undetailed. Saying its breakdown aged out would be inventing a past
+// for a day that never had one.
+test("a day with no record is not called aged out", () => {
+  assert.strictEqual(api.emptyDayNote("2026-09-02", "2026-09-05", 0, false),
+    "Nothing recorded on Sep 2.")
+})
+
 console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`)
 process.exit(failures === 0 ? 0 : 1)

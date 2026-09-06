@@ -57,17 +57,25 @@ Panel {
     ? traffic.todayKey
     : History.dayKey(new Date())
 
-  // "today" or "year". The year view is a drill-down from the same panel
+  // "day" or "year". The year view is a drill-down from the same panel
   // rather than a second popup, so the back control returns here.
-  property string scope: "today"
+  property string scope: "day"
   property string shownYear: History.yearOf(todayKey)
 
-  readonly property var today: History.dayInsights(history, todayKey)
-  readonly property var todayApps: Model.withColors(today.apps.slice(0, 7))
+  // Which day the day view is reading. The week strip sets it, so every number
+  // under the ring belongs to whichever bar is lit rather than always to today.
+  // Assigned rather than bound, because a binding would be broken by the first
+  // click and then never follow the date over again.
+  property string shownDay: todayKey
+  onTodayKeyChanged: root.shownDay = todayKey
+
+  readonly property var day: History.dayInsights(history, shownDay)
+  readonly property var dayApps: Model.withColors(day.apps.slice(0, 7))
   readonly property var year: History.yearInsights(history, shownYear)
 
   onTrafficChanged: if (traffic) traffic.settings = root.settings
   onOpenedChanged: {
+    if (opened) root.shownDay = root.todayKey
     if (!traffic) return
     traffic.watchClosely = opened
     if (opened) traffic.sample()
@@ -103,7 +111,7 @@ Panel {
     WidgetButton {
       anchors.fill: parent
       bar: root.bar
-      text: Model.GLYPH_NETWORK + "  " + root.barLabel
+      text: Model.GLYPH_NETWORK + " " + root.barLabel
       tooltipText: root.barTooltip
       active: root.overThreshold
       onPressed: function (buttonCode) { root.handleBarPress(buttonCode) }
@@ -148,8 +156,8 @@ Panel {
 
           PanelHero {
             width: parent.width
-            title: root.scope === "today" ? "Network by application" : root.shownYear
-            meta: root.scope === "today"
+            title: root.scope === "day" ? "Network by application" : root.shownYear
+            meta: root.scope === "day"
               ? Model.summary(root.live)
               : Model.formatBytes(root.year.total) + " moved"
             foreground: root.foreground
@@ -184,15 +192,15 @@ Panel {
                 }
 
                 PanelActionButton {
-                  iconText: root.scope === "today" ? Model.GLYPH_CALENDAR : Model.GLYPH_BACK
-                  tooltipText: root.scope === "today" ? "Show the year" : "Back to today"
+                  iconText: root.scope === "day" ? Model.GLYPH_CALENDAR : Model.GLYPH_BACK
+                  tooltipText: root.scope === "day" ? "Show the year" : "Back to today"
                   foreground: root.foreground
                   onClicked: {
-                    if (root.scope === "today") {
-                      root.shownYear = History.yearOf(root.todayKey)
+                    if (root.scope === "day") {
+                      root.shownYear = History.yearOf(root.shownDay)
                       root.scope = "year"
                     } else {
-                      root.scope = "today"
+                      root.scope = "day"
                     }
                   }
                 }
@@ -209,7 +217,7 @@ Panel {
 
           Text {
             width: parent.width
-            visible: root.scope === "today" && root.serviceError !== ""
+            visible: root.scope === "day" && root.serviceError !== ""
             text: root.serviceError
             color: root.urgent
             font.family: root.fontFamily
@@ -219,7 +227,7 @@ Panel {
 
           Text {
             width: parent.width
-            visible: root.scope === "today" && root.ready && root.apps.length === 0
+            visible: root.scope === "day" && root.ready && root.apps.length === 0
             text: "No application holds a network connection right now."
             color: root.dim
             font.family: root.fontFamily
@@ -228,14 +236,14 @@ Panel {
           }
 
 
-          // ------------------------------------------------------- today
+          // --------------------------------------------------------- day
           Item {
             width: parent.width
-            visible: root.scope === "today"
-            implicitHeight: todayColumn.implicitHeight
+            visible: root.scope === "day"
+            implicitHeight: dayColumn.implicitHeight
 
             Column {
-              id: todayColumn
+              id: dayColumn
               width: parent.width
               spacing: Style.space(10)
 
@@ -248,8 +256,8 @@ Panel {
                   width: Style.space(96)
                   height: Style.space(96)
 
-                  readonly property var slices: root.todayApps
-                  readonly property real sliceTotal: root.today.total
+                  readonly property var slices: root.dayApps
+                  readonly property real sliceTotal: root.day.total
                   onSlicesChanged: requestPaint()
                   onSliceTotalChanged: requestPaint()
 
@@ -286,14 +294,14 @@ Panel {
 
                     Text {
                       anchors.horizontalCenter: parent.horizontalCenter
-                      text: Model.formatDay(root.todayKey)
+                      text: Model.formatDay(root.shownDay)
                       color: root.dim
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                     }
                     Text {
                       anchors.horizontalCenter: parent.horizontalCenter
-                      text: Model.formatBytes(root.today.total)
+                      text: Model.formatBytes(root.day.total)
                       color: root.foreground
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.subtitle
@@ -306,7 +314,7 @@ Panel {
                   spacing: Style.space(3)
 
                   Repeater {
-                    model: root.todayApps
+                    model: root.dayApps
 
                     Item {
                       required property var modelData
@@ -347,10 +355,9 @@ Panel {
                   }
 
                   Text {
-                    visible: root.today.apps.length === 0
-                    text: root.today.detailed
-                      ? "Nothing recorded today yet."
-                      : "This day is older than the detail window."
+                    visible: root.day.apps.length === 0
+                    text: Model.emptyDayNote(root.shownDay, root.todayKey,
+                                             root.day.total, root.day.detailed)
                     color: root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -366,8 +373,8 @@ Panel {
 
                 readonly property real peak: {
                   var top = 0
-                  for (var i = 0; i < root.today.week.length; i++) {
-                    if (root.today.week[i].total > top) top = root.today.week[i].total
+                  for (var i = 0; i < root.day.week.length; i++) {
+                    if (root.day.week[i].total > top) top = root.day.week[i].total
                   }
                   return top
                 }
@@ -377,15 +384,21 @@ Panel {
                   spacing: Style.space(4)
 
                   Repeater {
-                    model: root.today.week
+                    model: root.day.week
 
                     Item {
+                      id: weekday
                       required property var modelData
                       required property int index
                       width: (parent.width - Style.space(4) * 6) / 7
                       height: parent.height
 
+                      readonly property bool isShown: modelData.key === root.shownDay
                       readonly property bool isToday: modelData.key === root.todayKey
+                      // Day keys are zero-padded, so ordering them as strings
+                      // orders them as dates. A day the week has not reached
+                      // has nothing behind it to open.
+                      readonly property bool readable: modelData.key <= root.todayKey
 
                       Rectangle {
                         anchors.bottom: dayName.top
@@ -399,18 +412,37 @@ Panel {
                           if (peak <= 0) return Style.space(2)
                           return Math.max(Style.space(2), room * (modelData.total / peak))
                         }
-                        color: isToday ? root.foreground : Qt.rgba(root.foreground.r,
-                          root.foreground.g, root.foreground.b, 0.28)
+                        color: weekday.isShown
+                          ? root.foreground
+                          : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b,
+                                    pick.containsMouse ? 0.55 : (weekday.readable ? 0.28 : 0.12))
+
+                        Behavior on color {
+                          ColorAnimation { duration: 60 }
+                        }
                       }
 
+                      // Lit is the day being read, underlined is today. They
+                      // are separate marks because they are separate facts, and
+                      // the underline is what points the way back.
                       Text {
                         id: dayName
                         anchors.bottom: parent.bottom
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: Model.WEEKDAYS[index]
-                        color: isToday ? root.foreground : root.dim
+                        text: Model.WEEKDAYS[weekday.index]
+                        color: weekday.isShown ? root.foreground : root.dim
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
+                        font.underline: weekday.isToday
+                      }
+
+                      MouseArea {
+                        id: pick
+                        anchors.fill: parent
+                        enabled: weekday.readable
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.shownDay = weekday.modelData.key
                       }
                     }
                   }
@@ -421,30 +453,30 @@ Panel {
                 model: [
                   {
                     label: "Top app",
-                    value: root.today.topApp
-                      ? root.today.topApp.name + "  " + Model.formatShare(root.today.topApp.share)
+                    value: root.day.topApp
+                      ? root.day.topApp.name + "  " + Model.formatShare(root.day.topApp.share)
                       : "nothing yet"
                   },
                   {
                     label: "vs yesterday",
-                    value: Model.formatChange(root.today.change)
+                    value: Model.formatChange(root.day.change)
                   },
                   {
                     label: "Busiest day this week",
-                    value: root.today.busiestOfWeek
-                      ? Model.formatDay(root.today.busiestOfWeek.key) + "  "
-                        + Model.formatBytes(root.today.busiestOfWeek.total)
+                    value: root.day.busiestOfWeek
+                      ? Model.formatDay(root.day.busiestOfWeek.key) + "  "
+                        + Model.formatBytes(root.day.busiestOfWeek.total)
                       : "nothing yet"
                   },
                   {
                     label: "Down / up",
-                    value: Model.formatBytes(root.today.rx) + "  /  " + Model.formatBytes(root.today.tx)
+                    value: Model.formatBytes(root.day.rx) + "  /  " + Model.formatBytes(root.day.tx)
                   }
                 ]
 
                 Item {
                   required property var modelData
-                  width: todayColumn.width
+                  width: dayColumn.width
                   height: Style.space(17)
 
                   Text {
@@ -649,7 +681,7 @@ Panel {
 
           PanelSectionHeader {
             width: parent.width
-            visible: root.scope === "today"
+            visible: root.scope === "day"
             text: "Right now"
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -661,7 +693,7 @@ Panel {
             Item {
               required property var modelData
               width: column.width
-              visible: root.scope === "today"
+              visible: root.scope === "day"
               height: visible ? Style.space(34) : 0
 
               readonly property bool moving: (modelData.rxRate + modelData.txRate) > 0
@@ -717,13 +749,13 @@ Panel {
 
           PanelSeparator {
             width: parent.width
-            visible: root.scope === "today" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
+            visible: root.scope === "day" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
             foreground: root.foreground
           }
 
           PanelSectionHeader {
             width: parent.width
-            visible: root.scope === "today" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
+            visible: root.scope === "day" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
             text: "Not attributable"
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -737,7 +769,7 @@ Panel {
           // be the dishonest one.
           Text {
             width: parent.width
-            visible: root.scope === "today" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
+            visible: root.scope === "day" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
             text: {
               var rate = Model.GLYPH_DOWN + " " + Model.formatRate(root.unattributed.rxRate)
                 + "   " + Model.GLYPH_UP + " " + Model.formatRate(root.unattributed.txRate)

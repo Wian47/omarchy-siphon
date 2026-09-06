@@ -444,6 +444,16 @@ function formatDay(key) {
   return months[Number(parts[1]) - 1] + " " + Number(parts[2])
 }
 
+// What the legend says when a day has no application breakdown to show. Three
+// different facts share that empty space. A day whose bytes are known but whose
+// apps were folded into the month is not a day that saw no traffic, and today
+// having none yet is not the same as a past day that never had any.
+function emptyDayNote(dayKey, todayKey, total, detailed) {
+  if (total > 0 && !detailed) return "This day is older than the detail window."
+  if (dayKey === todayKey) return "Nothing recorded today yet."
+  return "Nothing recorded on " + formatDay(dayKey) + "."
+}
+
 var WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 var GLYPH_CALENDAR = codepoint(0xF00ED)  // md-calendar

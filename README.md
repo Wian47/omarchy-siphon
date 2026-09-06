@@ -15,16 +15,20 @@ connection counts and a live rate in the bar. The bar label holds a fixed
 width, so the widget does not resize and shunt its neighbours along every time
 the rate crosses a digit or a unit.
 
-**Today.** A ring of the day's traffic by application with a legend, the week
+**A day.** A ring of the day's traffic by application with a legend, the week
 it sits in as a bar chart, and the four numbers worth knowing: the top app and
 its share, the change since yesterday, the busiest day of the week, and the
 download against upload split.
+
+Click any day in the week strip to read that day instead. The lit bar is the
+day being shown and the underlined name is today, so the way back is always
+marked. Days the week has not reached yet are not clickable.
 
 **This year.** Every month as a bar, and a grid of insight cards: total moved,
 busiest months, days with traffic out of days observed, peak day, longest
 streak, average day, top app, and how much could not be attributed at all.
 
-Use the calendar button in the panel to move between today and the year, and
+Use the calendar button in the panel to move between the day and the year, and
 the arrows to step through years.
 
 ## Where the history lives
@@ -114,6 +118,8 @@ rm -rf ~/.config/omarchy/siphon    # optional: forget the recorded history
 
 ## Keys and clicks
 
+- **Click a day** in the week strip to read that day's traffic. The panel
+  opens on today again next time.
 - **Middle-click the bar icon**, or press `r` in the panel, to reset the
   session totals.
 - **Escape** closes the panel.
@@ -121,10 +127,11 @@ rm -rf ~/.config/omarchy/siphon    # optional: forget the recorded history
 ## Tests
 
 ```bash
-node test/model.test.js    # 45 tests, no compositor
+node test/model.test.js    # 47 tests, no compositor
 node test/history.test.js  # 28 tests for the stored history
 node test/wiring.test.js   # cross-file checks: QML parses, bindings resolve
 node test/live.js 5        # drives the model against this machine's sockets
+bash test/render.sh       # draws the panel offscreen, checks the week strip
 bash test/prove-checks.sh # breaks each invariant, expects the suite to notice
 ```
 
@@ -134,6 +141,14 @@ boundary, and every insight. `wiring.test.js` covers what only breaks when two
 files disagree: QML that stopped parsing, a renamed function the panel still
 calls, a setting offered in the manifest that no code reads, and a `Service {}`
 declared in the panel, which the bar would build twice.
+
+`render.sh` loads the real `Panel.qml` against stand-in shell types and a
+seeded history, with Qt drawing to memory instead of a screen. It checks that
+one day is lit and it is the one being read, that today stays marked wherever
+the panel is, that no day the week has not reached is offered as clickable, and
+that a click moves the panel. It also leaves the pictures in `.render/`, because
+a layout is something to look at rather than something to assert about. It needs
+the Qt QML tools and skips without them.
 
 ## Licence
 
