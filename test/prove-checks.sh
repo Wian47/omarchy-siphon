@@ -101,18 +101,33 @@ attempt "a bar label that stops holding its width" \
   "sed -i 's/while (out.length < width) out = out + PAD/out = out/' Model.js" \
   model
 
+attempt "a README history count that no longer matches the suite" \
+  "sed -i 's/# [0-9]* tests for the stored history/# 999 tests for the stored history/' README.md"
+
 # The panel is only rendered where the Qt QML tools are installed, and a suite
 # that skips cannot be watched failing.
 if command -v qml6 >/dev/null 2>&1; then
-  attempt "a week strip that stops following the day being read" \
-    "sed -i 's/readonly property bool isShown: modelData.key === root.shownDay/readonly property bool isShown: modelData.key === root.todayKey/' Panel.qml" \
+  attempt "a strip that stops following the day being read" \
+    "sed -i 's/readonly property bool isShown: root.scope === \"day\" \&\& cell.modelData.key === root.period.from/readonly property bool isShown: cell.modelData.key === root.reachable/' Panel.qml" \
     render
 
-  attempt "a day the week has not reached offered as something to open" \
-    "sed -i 's|readonly property bool readable: modelData.key <= root.todayKey|readonly property bool readable: true|' Panel.qml" \
+  attempt "a part of the calendar that has not happened offered as something to open" \
+    "sed -i 's|readonly property bool readable: cell.modelData.key <= root.reachable|readonly property bool readable: true|' Panel.qml" \
+    render
+
+  attempt "a size button that does not change the size" \
+    "sed -i 's/onClicked: root.selectScope(filter.modelData)/onClicked: root.selectScope(root.scope)/' Panel.qml" \
+    render
+
+  attempt "an arrow offering to step past today" \
+    "sed -i 's/enabled: root.period.to < root.todayKey/enabled: true/' Panel.qml" \
+    render
+
+  attempt "a bar that no longer opens what it is a part of" \
+    "sed -i 's/onClicked: root.openChild(cell.modelData.key)/onClicked: root.stepPeriod(0)/' Panel.qml" \
     render
 else
-  echo "  skip   the two week strip breaks, qml6 is not installed"
+  echo "  skip   the five period control breaks, qml6 is not installed"
 fi
 
 echo

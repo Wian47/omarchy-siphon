@@ -16,6 +16,7 @@ const root = path.join(__dirname, "..")
 const read = name => fs.readFileSync(path.join(root, name), "utf8")
 
 const modelSource = read("Model.js")
+const historySource = read("History.js")
 const serviceSource = read("Service.qml")
 const panelSource = read("Panel.qml")
 const readme = read("README.md")
@@ -104,6 +105,20 @@ check("every Model function the QML calls exists", () => {
   for (const [file, source] of [["Panel.qml", panelSource], ["Service.qml", serviceSource]]) {
     for (const [name, line] of referenced(source, "Model")) {
       if (!declared.has(name)) problems.push(`${file}:${line} calls Model.${name}, which Model.js does not declare`)
+    }
+  }
+  return problems
+})
+
+// Same check for History.js. The panel reads the whole period model through
+// it, so a renamed function there is a panel that loads and then draws
+// nothing, with the reason only in the shell's log.
+check("every History function the QML calls exists", () => {
+  const declared = declaredIn(historySource)
+  const problems = []
+  for (const [file, source] of [["Panel.qml", panelSource], ["Service.qml", serviceSource]]) {
+    for (const [name, line] of referenced(source, "History")) {
+      if (!declared.has(name)) problems.push(`${file}:${line} calls History.${name}, which History.js does not declare`)
     }
   }
   return problems
@@ -238,12 +253,17 @@ check("the sample command actually emits its markers through a shell", () => {
   return []
 })
 
-check("the README's test count matches the suites", () => {
-  const claimed = (readme.match(/# (\d+) tests, no compositor/) || [])[1]
-  if (!claimed) return ["the README does not state a test count"]
-  const count = execFileSync("node", ["test/model.test.js"], { cwd: root, encoding: "utf8" })
-    .split("\n").filter(line => line.includes("  ok   ")).length
-  return Number(claimed) === count ? [] : [`the README claims ${claimed} tests, model.test.js has ${count}`]
+// A count per suite, not one for the whole tree. An edit that takes a section
+// of tests out with the code it was rewriting leaves a suite that still says
+// all tests passed, and the count is the only thing that notices.
+check("the README's test counts match the suites", () => {
+  return ["model", "history"].flatMap(suite => {
+    const claimed = (readme.match(new RegExp(`test/${suite}\\.test\\.js\\s+# (\\d+) tests`)) || [])[1]
+    if (!claimed) return [`the README states no test count for ${suite}.test.js`]
+    const count = execFileSync("node", [`test/${suite}.test.js`], { cwd: root, encoding: "utf8" })
+      .split("\n").filter(line => line.includes("  ok   ")).length
+    return Number(claimed) === count ? [] : [`the README claims ${claimed} tests in ${suite}.test.js, which has ${count}`]
+  })
 })
 
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`)

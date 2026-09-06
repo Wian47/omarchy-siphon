@@ -236,80 +236,6 @@ test("a string where a number should be reads as zero, not NaN", () => {
   assert.deepStrictEqual(parsed.days["2026-09-04"].apps, {})
 })
 
-console.log("\nHistory.dayInsights")
-
-test("today reads its week, its top app and the change since yesterday", () => {
-  const h = seed([
-    ["2026-09-02", { brave: { rx: 100, tx: 0 } }],
-    ["2026-09-03", { brave: { rx: 400, tx: 0 } }],
-    ["2026-09-04", { brave: { rx: 300, tx: 0 }, spotify: { rx: 100, tx: 0 } }]
-  ])
-  const day = api.dayInsights(h, "2026-09-04")
-  assert.strictEqual(day.total, 400)
-  assert.strictEqual(day.topApp.name, "brave")
-  assert.strictEqual(day.topApp.share, 0.75)
-  assert.strictEqual(day.yesterday, 400)
-  assert.strictEqual(day.change, 0, "same as yesterday reads as no change")
-  assert.strictEqual(day.weekStartKey, "2026-08-31", "the week starts on Monday")
-  assert.strictEqual(day.week.length, 7)
-  assert.strictEqual(day.busiestOfWeek.key, "2026-09-03")
-})
-
-test("a fall since yesterday is a negative change, not an absolute one", () => {
-  const h = seed([
-    ["2026-09-03", { brave: { rx: 1000, tx: 0 } }],
-    ["2026-09-04", { brave: { rx: 250, tx: 0 } }]
-  ])
-  assert.strictEqual(api.dayInsights(h, "2026-09-04").change, -750)
-})
-
-test("a day with nothing recorded still answers with an empty week", () => {
-  const day = api.dayInsights(api.emptyHistory(), "2026-09-04")
-  assert.strictEqual(day.total, 0)
-  assert.strictEqual(day.topApp, null)
-  assert.strictEqual(day.week.length, 7)
-  assert.strictEqual(day.busiestOfWeek, null)
-})
-
-console.log("\nHistory.yearInsights")
-
-test("a year reports its peak, its busiest months and its streak", () => {
-  const h = seed([
-    ["2026-01-10", { brave: { rx: 100, tx: 0 } }],
-    ["2026-08-01", { brave: { rx: 900, tx: 0 } }],
-    ["2026-08-02", { brave: { rx: 500, tx: 0 } }],
-    ["2026-08-03", { brave: { rx: 200, tx: 0 } }],
-    ["2026-09-01", { spotify: { rx: 300, tx: 0 } }]
-  ])
-  const year = api.yearInsights(h, "2026")
-  assert.strictEqual(year.total, 2000)
-  assert.strictEqual(year.activeDays, 5)
-  assert.strictEqual(year.peak.key, "2026-08-01")
-  assert.strictEqual(year.quietest.key, "2026-01-10")
-  assert.strictEqual(year.streak, 3, "1-3 August is a three day run")
-  assert.deepStrictEqual(year.topMonths.map(m => m.month), [8, 9])
-  assert.strictEqual(year.apps[0].name, "brave")
-})
-
-// A year is 365 days but only the days up to today have been observed. Counting
-// the rest as tracked would drag every average down as the year went on.
-test("only days up to today count as tracked", () => {
-  const h = seed([["2026-01-10", { brave: { rx: 100, tx: 0 } }]])
-  const year = api.yearInsights(h, "2026")
-  const today = api.dayKey(new Date())
-  const expected = api.daysBetween("2026-01-01", today) + 1
-  assert.strictEqual(year.trackedDays, expected)
-  assert.ok(year.trackedDays < 366, "the rest of the year is not tracked yet")
-})
-
-test("an empty year answers without throwing", () => {
-  const year = api.yearInsights(api.emptyHistory(), "2026")
-  assert.strictEqual(year.total, 0)
-  assert.strictEqual(year.peak, null)
-  assert.deepStrictEqual(year.topMonths, [])
-  assert.strictEqual(year.averagePerActiveDay, 0)
-})
-
 console.log("\nHistory periods")
 
 test("a period covers the days a person means by its name", () => {
@@ -344,6 +270,10 @@ test("stepping a period crosses the boundary above it", () => {
 
 console.log("\nHistory.periodInsights")
 
+// Which day it is comes from the service rather than the clock, so these name
+// it instead of depending on the day they happen to run.
+const TODAY = "2026-09-30"
+
 const fourDays = () => seed([
   ["2026-09-02", { brave: { rx: 100, tx: 0 } }],
   ["2026-09-03", { brave: { rx: 400, tx: 0 } }],
@@ -351,7 +281,7 @@ const fourDays = () => seed([
 ])
 
 test("a day reads its top app, the week around it and the change since yesterday", () => {
-  const day = api.periodInsights(fourDays(), "day", "2026-09-04")
+  const day = api.periodInsights(fourDays(), "day", "2026-09-04", TODAY)
   assert.strictEqual(day.total, 400)
   assert.strictEqual(day.topApp.name, "brave")
   assert.strictEqual(day.topApp.share, 0.75)
@@ -369,7 +299,7 @@ test("a fall since the period before is a negative change, not an absolute one",
     ["2026-09-03", { brave: { rx: 1000, tx: 0 } }],
     ["2026-09-04", { brave: { rx: 250, tx: 0 } }]
   ])
-  assert.strictEqual(api.periodInsights(h, "day", "2026-09-04").change, -750)
+  assert.strictEqual(api.periodInsights(h, "day", "2026-09-04", TODAY).change, -750)
 })
 
 test("a week totals its own days and compares against the week before", () => {
@@ -379,7 +309,7 @@ test("a week totals its own days and compares against the week before", () => {
     ["2026-09-03", { brave: { rx: 400, tx: 0 } }],
     ["2026-09-04", { spotify: { rx: 300, tx: 0 } }]
   ])
-  const week = api.periodInsights(h, "week", "2026-09-04")
+  const week = api.periodInsights(h, "week", "2026-09-04", TODAY)
   assert.deepStrictEqual([week.from, week.to], ["2026-08-31", "2026-09-06"])
   assert.strictEqual(week.total, 800)
   assert.strictEqual(week.previous, 1000, "the week before is the one it is measured against")
@@ -393,12 +323,12 @@ test("a week totals its own days and compares against the week before", () => {
 
 test("a month is a strip of its own days and a year is a strip of months", () => {
   const h = fourDays()
-  const month = api.periodInsights(h, "month", "2026-09-04")
+  const month = api.periodInsights(h, "month", "2026-09-04", TODAY)
   assert.strictEqual(month.series.length, 30)
   assert.strictEqual(month.series[0].key, "2026-09-01")
   assert.strictEqual(month.childScope, "day")
 
-  const year = api.periodInsights(h, "year", "2026-09-04")
+  const year = api.periodInsights(h, "year", "2026-09-04", TODAY)
   assert.strictEqual(year.series.length, 12)
   assert.strictEqual(year.series[8].key, "2026-09")
   assert.strictEqual(year.childScope, "month", "clicking a bar in a year opens that month")
@@ -408,9 +338,10 @@ test("a month is a strip of its own days and a year is a strip of months", () =>
 // A period is 365 days but only the days up to today have been observed.
 // Counting the rest as tracked would drag every average down as it went on.
 test("only days up to today count as tracked", () => {
-  const year = api.periodInsights(seed([["2026-01-10", { brave: { rx: 100, tx: 0 } }]]), "year", "2026-01-10")
-  const expected = api.daysBetween("2026-01-01", api.dayKey(new Date())) + 1
-  assert.strictEqual(year.trackedDays, expected)
+  const h = seed([["2026-01-10", { brave: { rx: 100, tx: 0 } }]])
+  const year = api.periodInsights(h, "year", "2026-01-10", "2026-04-15")
+  assert.strictEqual(year.trackedDays, api.daysBetween("2026-01-01", "2026-04-15") + 1)
+  assert.strictEqual(year.trackedDays, 105)
   assert.ok(year.trackedDays < 366, "the rest of the year is not tracked yet")
 })
 
@@ -424,18 +355,18 @@ test("a period keeps the bytes of days whose applications aged out", () => {
   h = api.prune(h, "2026-09-04", 95)
   assert.ok(!h.days["2026-05-01"], "the day under test has to be out of the detail window")
 
-  const week = api.periodInsights(h, "week", "2026-05-01")
+  const week = api.periodInsights(h, "week", "2026-05-01", TODAY)
   assert.strictEqual(week.total, 1000, "the bytes survive")
   assert.strictEqual(week.apps.length, 0, "the breakdown does not")
 
-  const month = api.periodInsights(h, "month", "2026-05-01")
+  const month = api.periodInsights(h, "month", "2026-05-01", TODAY)
   assert.strictEqual(month.total, 1000)
   assert.strictEqual(month.topApp.name, "brave", "a month keeps what it folded in")
 })
 
 test("an empty period answers without throwing", () => {
   for (const scope of api.SCOPES) {
-    const empty = api.periodInsights(api.emptyHistory(), scope, "2026-09-04")
+    const empty = api.periodInsights(api.emptyHistory(), scope, "2026-09-04", TODAY)
     assert.strictEqual(empty.total, 0, scope + " total")
     assert.strictEqual(empty.topApp, null, scope + " top app")
     assert.strictEqual(empty.peak, null, scope + " peak")

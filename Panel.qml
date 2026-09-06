@@ -57,25 +57,27 @@ Panel {
     ? traffic.todayKey
     : History.dayKey(new Date())
 
-  // "day" or "year". The year view is a drill-down from the same panel
-  // rather than a second popup, so the back control returns here.
+  // The whole view reads one period: a scope, and the day that period starts
+  // on. Assigned rather than bound, because a binding would be broken by the
+  // first step and then never follow the date over midnight again.
   property string scope: "day"
-  property string shownYear: History.yearOf(todayKey)
+  property string anchor: History.periodStart(scope, todayKey)
+  onTodayKeyChanged: root.anchor = History.periodStart(root.scope, todayKey)
 
-  // Which day the day view is reading. The week strip sets it, so every number
-  // under the ring belongs to whichever bar is lit rather than always to today.
-  // Assigned rather than bound, because a binding would be broken by the first
-  // click and then never follow the date over again.
-  property string shownDay: todayKey
-  onTodayKeyChanged: root.shownDay = todayKey
+  readonly property var period: History.periodInsights(history, scope, anchor, todayKey)
+  readonly property var periodApps: Model.withColors(period.apps.slice(0, 7))
+  readonly property string periodName: Model.periodLabel(period.scope, period.from, period.to)
+  readonly property bool showsToday: period.from <= todayKey && todayKey <= period.to
 
-  readonly property var day: History.dayInsights(history, shownDay)
-  readonly property var dayApps: Model.withColors(day.apps.slice(0, 7))
-  readonly property var year: History.yearInsights(history, shownYear)
+  // The last part of the strip that has happened. Day keys are zero-padded and
+  // so are month keys, so ordering them as strings orders them as dates, and
+  // this is also the test for a bar with nothing behind it to open.
+  readonly property string reachable: period.childScope === "month"
+    ? History.monthOf(todayKey) : todayKey
 
   onTrafficChanged: if (traffic) traffic.settings = root.settings
   onOpenedChanged: {
-    if (opened) root.shownDay = root.todayKey
+    if (opened) root.anchor = History.periodStart(root.scope, root.todayKey)
     if (!traffic) return
     traffic.watchClosely = opened
     if (opened) traffic.sample()
@@ -84,6 +86,34 @@ Panel {
   function handleBarPress(buttonCode) {
     if (buttonCode === Qt.MiddleButton) { if (traffic) traffic.reset() }
     else root.toggle()
+  }
+
+  // Switching size keeps your place. A period holding today re-anchors on
+  // today, so leaving the year view for the day view lands on this morning
+  // rather than on the first of January.
+  function selectScope(next) {
+    var place = root.showsToday ? root.todayKey : root.period.from
+    root.scope = next
+    root.anchor = History.periodStart(next, place)
+  }
+
+  function stepPeriod(count) {
+    root.anchor = History.shiftPeriod(root.scope, root.anchor, count)
+  }
+
+  // A bar in the strip is a part of the period, so opening one is a size down.
+  // A day's strip is the week around it, whose parts are days, which is how
+  // clicking a weekday moves the day view without leaving it.
+  function openChild(key) {
+    var child = root.period.childScope
+    root.scope = child
+    root.anchor = History.periodStart(child, key)
+  }
+
+  function childName(key) {
+    var child = root.period.childScope
+    var start = History.periodStart(child, key)
+    return Model.periodLabel(child, start, History.periodEnd(child, start))
   }
 
   Loader {
@@ -156,10 +186,8 @@ Panel {
 
           PanelHero {
             width: parent.width
-            title: root.scope === "day" ? "Network by application" : root.shownYear
-            meta: root.scope === "day"
-              ? Model.summary(root.live)
-              : Model.formatBytes(root.year.total) + " moved"
+            title: "Network by application"
+            meta: Model.summary(root.live)
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconComponent: Component {
@@ -172,44 +200,86 @@ Panel {
               }
             }
             trailingControl: Component {
-              Row {
-                spacing: Style.space(2)
+              PanelActionButton {
+                iconText: Model.GLYPH_RESET
+                tooltipText: "Reset the live session totals"
+                foreground: root.foreground
+                onClicked: if (root.traffic) root.traffic.reset()
+              }
+            }
+          }
 
-                PanelActionButton {
-                  visible: root.scope === "year"
-                  iconText: Model.GLYPH_PREV
-                  tooltipText: "Previous year"
-                  foreground: root.foreground
-                  onClicked: root.shownYear = String(Number(root.shownYear) - 1)
+          // The period being read, and the four sizes it comes in. The arrows
+          // step by one of whatever size is selected.
+          Item {
+            width: parent.width
+            height: Style.space(22)
+
+            PanelActionButton {
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              iconText: Model.GLYPH_PREV
+              tooltipText: "Previous " + root.scope
+              foreground: root.foreground
+              onClicked: root.stepPeriod(-1)
+            }
+
+            Text {
+              anchors.centerIn: parent
+              text: root.periodName
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+
+            PanelActionButton {
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              // Nothing has happened after today, so there is nowhere to step to.
+              enabled: root.period.to < root.todayKey
+              iconText: Model.GLYPH_NEXT
+              tooltipText: "Next " + root.scope
+              foreground: root.foreground
+              onClicked: root.stepPeriod(1)
+            }
+          }
+
+          Row {
+            width: parent.width
+            spacing: Style.space(4)
+
+            Repeater {
+              model: History.SCOPES
+
+              Rectangle {
+                id: filter
+                required property var modelData
+                readonly property bool selected: filter.modelData === root.scope
+
+                width: (parent.width - Style.space(4) * 3) / 4
+                height: Style.space(22)
+                radius: Style.space(6)
+                color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b,
+                               filter.selected ? 0.18 : (choose.containsMouse ? 0.10 : 0.04))
+
+                Behavior on color {
+                  ColorAnimation { duration: 60 }
                 }
 
-                PanelActionButton {
-                  visible: root.scope === "year"
-                  iconText: Model.GLYPH_NEXT
-                  tooltipText: "Next year"
-                  foreground: root.foreground
-                  onClicked: root.shownYear = String(Number(root.shownYear) + 1)
+                Text {
+                  anchors.centerIn: parent
+                  text: filter.modelData
+                  color: filter.selected ? root.foreground : root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
                 }
 
-                PanelActionButton {
-                  iconText: root.scope === "day" ? Model.GLYPH_CALENDAR : Model.GLYPH_BACK
-                  tooltipText: root.scope === "day" ? "Show the year" : "Back to today"
-                  foreground: root.foreground
-                  onClicked: {
-                    if (root.scope === "day") {
-                      root.shownYear = History.yearOf(root.shownDay)
-                      root.scope = "year"
-                    } else {
-                      root.scope = "day"
-                    }
-                  }
-                }
-
-                PanelActionButton {
-                  iconText: Model.GLYPH_RESET
-                  tooltipText: "Reset the live session totals"
-                  foreground: root.foreground
-                  onClicked: if (root.traffic) root.traffic.reset()
+                MouseArea {
+                  id: choose
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.selectScope(filter.modelData)
                 }
               }
             }
@@ -217,7 +287,7 @@ Panel {
 
           Text {
             width: parent.width
-            visible: root.scope === "day" && root.serviceError !== ""
+            visible: root.serviceError !== ""
             text: root.serviceError
             color: root.urgent
             font.family: root.fontFamily
@@ -227,7 +297,7 @@ Panel {
 
           Text {
             width: parent.width
-            visible: root.scope === "day" && root.ready && root.apps.length === 0
+            visible: root.ready && root.apps.length === 0
             text: "No application holds a network connection right now."
             color: root.dim
             font.family: root.fontFamily
@@ -236,442 +306,378 @@ Panel {
           }
 
 
-          // --------------------------------------------------------- day
-          Item {
+          // ------------------------------------------------------ period
+          Column {
+            id: periodColumn
             width: parent.width
-            visible: root.scope === "day"
-            implicitHeight: dayColumn.implicitHeight
+            spacing: Style.space(10)
 
-            Column {
-              id: dayColumn
+            Row {
               width: parent.width
-              spacing: Style.space(10)
+              spacing: Style.space(14)
 
-              Row {
-                width: parent.width
-                spacing: Style.space(14)
+              Canvas {
+                id: donut
+                width: Style.space(96)
+                height: Style.space(96)
 
-                Canvas {
-                  id: donut
-                  width: Style.space(96)
-                  height: Style.space(96)
+                readonly property var slices: root.periodApps
+                readonly property real sliceTotal: root.period.total
+                onSlicesChanged: requestPaint()
+                onSliceTotalChanged: requestPaint()
 
-                  readonly property var slices: root.dayApps
-                  readonly property real sliceTotal: root.day.total
-                  onSlicesChanged: requestPaint()
-                  onSliceTotalChanged: requestPaint()
-
-                  onPaint: {
-                    var ctx = getContext("2d")
-                    ctx.reset()
-                    var mid = width / 2
-                    var outer = mid - Style.space(2)
-                    var inner = outer * 0.62
-                    if (sliceTotal <= 0) {
-                      ctx.beginPath()
-                      ctx.arc(mid, mid, (outer + inner) / 2, 0, Math.PI * 2)
-                      ctx.lineWidth = outer - inner
-                      ctx.strokeStyle = Qt.rgba(root.foreground.r, root.foreground.g,
-                                                root.foreground.b, 0.12)
-                      ctx.stroke()
-                      return
-                    }
-                    var angle = -Math.PI / 2
-                    for (var i = 0; i < slices.length; i++) {
-                      var sweep = (slices[i].total / sliceTotal) * Math.PI * 2
-                      ctx.beginPath()
-                      ctx.arc(mid, mid, (outer + inner) / 2, angle, angle + sweep)
-                      ctx.lineWidth = outer - inner
-                      ctx.strokeStyle = slices[i].color
-                      ctx.stroke()
-                      angle += sweep
-                    }
+                onPaint: {
+                  var ctx = getContext("2d")
+                  ctx.reset()
+                  var mid = width / 2
+                  var outer = mid - Style.space(2)
+                  var inner = outer * 0.62
+                  if (sliceTotal <= 0) {
+                    ctx.beginPath()
+                    ctx.arc(mid, mid, (outer + inner) / 2, 0, Math.PI * 2)
+                    ctx.lineWidth = outer - inner
+                    ctx.strokeStyle = Qt.rgba(root.foreground.r, root.foreground.g,
+                                              root.foreground.b, 0.12)
+                    ctx.stroke()
+                    return
                   }
+                  var angle = -Math.PI / 2
+                  for (var i = 0; i < slices.length; i++) {
+                    var sweep = (slices[i].total / sliceTotal) * Math.PI * 2
+                    ctx.beginPath()
+                    ctx.arc(mid, mid, (outer + inner) / 2, angle, angle + sweep)
+                    ctx.lineWidth = outer - inner
+                    ctx.strokeStyle = slices[i].color
+                    ctx.stroke()
+                    angle += sweep
+                  }
+                }
 
-                  Column {
-                    anchors.centerIn: parent
-                    spacing: 0
+                // The navigator above already names the period, so the ring
+                // says how much rather than saying when a second time.
+                Column {
+                  anchors.centerIn: parent
+                  spacing: 0
+
+                  Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: Model.formatBytes(root.period.total)
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.subtitle
+                  }
+                  Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "moved"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+
+              Column {
+                width: parent.width - donut.width - Style.space(14)
+                spacing: Style.space(3)
+
+                Repeater {
+                  model: root.periodApps
+
+                  Item {
+                    required property var modelData
+                    width: parent.width
+                    height: Style.space(15)
+
+                    Rectangle {
+                      id: dot
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: Style.space(6)
+                      height: width
+                      radius: width / 2
+                      color: modelData.color
+                    }
 
                     Text {
+                      anchors.left: dot.right
+                      anchors.leftMargin: Style.space(6)
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: parent.width * 0.5
+                      elide: Text.ElideRight
+                      textFormat: Text.PlainText
+                      text: modelData.name
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                    }
+
+                    Text {
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: Model.formatBytes(modelData.total)
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                    }
+                  }
+                }
+
+                Text {
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  visible: root.period.apps.length === 0
+                  text: Model.emptyPeriodNote(root.period.scope, root.periodName,
+                                              root.showsToday, root.period.total)
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+
+            // The parts of the period, as bars. Heights are shares of the
+            // strip's own peak, so a quiet week still reads rather than
+            // flattening to nothing.
+            Item {
+              id: strip
+              width: parent.width
+              height: Style.space(52)
+
+              readonly property var entries: root.period.series
+              // A month has thirty-odd bars and a week has seven. The same gap
+              // between both would leave the month more gap than bar.
+              readonly property real gap: strip.entries.length > 12 ? Style.space(2) : Style.space(4)
+              readonly property real peak: {
+                var top = 0
+                for (var i = 0; i < strip.entries.length; i++) {
+                  if (strip.entries[i].total > top) top = strip.entries[i].total
+                }
+                return top
+              }
+
+              Row {
+                anchors.fill: parent
+                spacing: strip.gap
+
+                Repeater {
+                  model: strip.entries
+
+                  Item {
+                    id: cell
+                    required property var modelData
+                    required property int index
+                    width: (strip.width - strip.gap * (strip.entries.length - 1)) / strip.entries.length
+                    height: parent.height
+
+                    // Only a day view lights a bar, because only there is one
+                    // bar the period itself. Everywhere else the whole strip
+                    // is the period and the mark that matters is today's.
+                    readonly property bool isShown: root.scope === "day" && cell.modelData.key === root.period.from
+                    readonly property bool isToday: cell.modelData.key === root.reachable
+                    readonly property bool readable: cell.modelData.key <= root.reachable
+
+                    Rectangle {
+                      anchors.bottom: cellName.top
+                      anchors.bottomMargin: Style.space(4)
                       anchors.horizontalCenter: parent.horizontalCenter
-                      text: Model.formatDay(root.shownDay)
+                      width: parent.width * 0.62
+                      radius: Style.space(2)
+                      // A part that saw nothing draws nothing. The floor below
+                      // is so a small share still reads, and applying it to
+                      // zero would draw twelve identical stubs across a year
+                      // that only moved bytes in one month.
+                      height: {
+                        var room = cell.height - cellName.height - Style.space(4)
+                        // The lit bar keeps a floor whatever it holds, because
+                        // there it marks a selection rather than a quantity.
+                        if (strip.peak <= 0 || cell.modelData.total <= 0) {
+                          return cell.isShown ? Style.space(2) : 0
+                        }
+                        return Math.max(Style.space(2), room * (cell.modelData.total / strip.peak))
+                      }
+                      color: cell.isShown
+                        ? root.foreground
+                        : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b,
+                                  pick.containsMouse ? 0.55 : (cell.readable ? 0.28 : 0.12))
+
+                      Behavior on color {
+                        ColorAnimation { duration: 60 }
+                      }
+                    }
+
+                    // Lit is the part being read, underlined is the part
+                    // happening now. They are separate marks because they are
+                    // separate facts, and the underline is the way back.
+                    Text {
+                      id: cellName
+                      anchors.bottom: parent.bottom
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      text: Model.stripLabel(root.period.scope, cell.modelData.key, cell.index)
+                      color: cell.isShown ? root.foreground : root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.underline: cell.isToday
+                    }
+
+                    MouseArea {
+                      id: pick
+                      anchors.fill: parent
+                      enabled: cell.readable
+                      hoverEnabled: true
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.openChild(cell.modelData.key)
+                    }
+                  }
+                }
+              }
+            }
+
+            Repeater {
+              model: [
+                {
+                  label: "Top app",
+                  value: root.period.topApp
+                    ? root.period.topApp.name + "  " + Model.formatShare(root.period.topApp.share)
+                    : "nothing yet"
+                },
+                {
+                  label: Model.PREVIOUS_LABEL[root.period.scope],
+                  value: Model.formatChange(root.period.change)
+                },
+                {
+                  label: Model.busiestLabel(root.period.scope),
+                  value: root.period.busiest
+                    ? root.childName(root.period.busiest.key) + "  "
+                      + Model.formatBytes(root.period.busiest.total)
+                    : "nothing yet"
+                },
+                {
+                  label: "Down / up",
+                  value: Model.formatBytes(root.period.rx) + "  /  " + Model.formatBytes(root.period.tx)
+                }
+              ]
+
+              Item {
+                required property var modelData
+                width: periodColumn.width
+                height: Style.space(17)
+
+                Text {
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: modelData.label
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                Text {
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: modelData.value
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+              }
+            }
+
+            // Everything below counts days, so a single day has nothing to
+            // say here that the rows above have not already said.
+            PanelSeparator {
+              width: parent.width
+              visible: root.scope !== "day"
+              foreground: root.foreground
+            }
+
+            PanelSectionHeader {
+              width: parent.width
+              visible: root.scope !== "day"
+              text: "Insights"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Grid {
+              width: parent.width
+              visible: root.scope !== "day"
+              columns: 2
+              spacing: Style.space(6)
+
+              Repeater {
+                model: [
+                  {
+                    title: "DAY COUNT",
+                    value: root.period.activeDays + " of " + root.period.trackedDays + " days",
+                    detail: "Days with traffic, out of days observed."
+                  },
+                  {
+                    title: "PEAK DAY",
+                    value: root.period.peak
+                      ? Model.formatDay(root.period.peak.key) + " · " + Model.formatBytes(root.period.peak.total)
+                      : "nothing yet",
+                    detail: "Nothing above it."
+                  },
+                  {
+                    title: "QUIETEST DAY",
+                    value: root.period.quietest
+                      ? Model.formatDay(root.period.quietest.key) + " · " + Model.formatBytes(root.period.quietest.total)
+                      : "nothing yet",
+                    detail: "The lightest day that saw anything at all."
+                  },
+                  {
+                    title: "LONGEST STREAK",
+                    value: root.period.streak + (root.period.streak === 1 ? " day" : " days"),
+                    detail: "Consecutive days with traffic."
+                  },
+                  {
+                    title: "AVERAGE DAY",
+                    value: Model.formatBytes(root.period.averagePerActiveDay),
+                    detail: "Per day that saw any traffic."
+                  },
+                  {
+                    title: "UNATTRIBUTED",
+                    value: Model.formatShare(root.period.unattributedShare),
+                    detail: "QUIC and framing, which carry no per-socket count."
+                  }
+                ]
+
+                Rectangle {
+                  required property var modelData
+                  width: (periodColumn.width - Style.space(6)) / 2
+                  implicitHeight: cardBody.implicitHeight + Style.space(16)
+                  radius: Style.space(6)
+                  color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
+
+                  Column {
+                    id: cardBody
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: Style.space(8)
+                    spacing: Style.space(2)
+
+                    Text {
+                      width: parent.width
+                      text: modelData.title
                       color: root.dim
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.caption
                     }
                     Text {
-                      anchors.horizontalCenter: parent.horizontalCenter
-                      text: Model.formatBytes(root.day.total)
+                      width: parent.width
+                      wrapMode: Text.WordWrap
+                      text: modelData.value
                       color: root.foreground
                       font.family: root.fontFamily
-                      font.pixelSize: Style.font.subtitle
+                      font.pixelSize: Style.font.bodySmall
                     }
-                  }
-                }
-
-                Column {
-                  width: parent.width - donut.width - Style.space(14)
-                  spacing: Style.space(3)
-
-                  Repeater {
-                    model: root.dayApps
-
-                    Item {
-                      required property var modelData
+                    Text {
                       width: parent.width
-                      height: Style.space(15)
-
-                      Rectangle {
-                        id: dot
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Style.space(6)
-                        height: width
-                        radius: width / 2
-                        color: modelData.color
-                      }
-
-                      Text {
-                        anchors.left: dot.right
-                        anchors.leftMargin: Style.space(6)
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width * 0.5
-                        elide: Text.ElideRight
-                        textFormat: Text.PlainText
-                        text: modelData.name
-                        color: root.foreground
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.bodySmall
-                      }
-
-                      Text {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: Model.formatBytes(modelData.total)
-                        color: root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.bodySmall
-                      }
-                    }
-                  }
-
-                  Text {
-                    visible: root.day.apps.length === 0
-                    text: Model.emptyDayNote(root.shownDay, root.todayKey,
-                                             root.day.total, root.day.detailed)
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                  }
-                }
-              }
-
-              // Week bars. Heights are shares of the week's own peak, so a
-              // quiet week still reads rather than flattening to nothing.
-              Item {
-                width: parent.width
-                height: Style.space(52)
-
-                readonly property real peak: {
-                  var top = 0
-                  for (var i = 0; i < root.day.week.length; i++) {
-                    if (root.day.week[i].total > top) top = root.day.week[i].total
-                  }
-                  return top
-                }
-
-                Row {
-                  anchors.fill: parent
-                  spacing: Style.space(4)
-
-                  Repeater {
-                    model: root.day.week
-
-                    Item {
-                      id: weekday
-                      required property var modelData
-                      required property int index
-                      width: (parent.width - Style.space(4) * 6) / 7
-                      height: parent.height
-
-                      readonly property bool isShown: modelData.key === root.shownDay
-                      readonly property bool isToday: modelData.key === root.todayKey
-                      // Day keys are zero-padded, so ordering them as strings
-                      // orders them as dates. A day the week has not reached
-                      // has nothing behind it to open.
-                      readonly property bool readable: modelData.key <= root.todayKey
-
-                      Rectangle {
-                        anchors.bottom: dayName.top
-                        anchors.bottomMargin: Style.space(4)
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        width: parent.width * 0.62
-                        radius: Style.space(2)
-                        height: {
-                          var room = parent.height - dayName.height - Style.space(4)
-                          var peak = parent.parent.parent.peak
-                          if (peak <= 0) return Style.space(2)
-                          return Math.max(Style.space(2), room * (modelData.total / peak))
-                        }
-                        color: weekday.isShown
-                          ? root.foreground
-                          : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b,
-                                    pick.containsMouse ? 0.55 : (weekday.readable ? 0.28 : 0.12))
-
-                        Behavior on color {
-                          ColorAnimation { duration: 60 }
-                        }
-                      }
-
-                      // Lit is the day being read, underlined is today. They
-                      // are separate marks because they are separate facts, and
-                      // the underline is what points the way back.
-                      Text {
-                        id: dayName
-                        anchors.bottom: parent.bottom
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: Model.WEEKDAYS[weekday.index]
-                        color: weekday.isShown ? root.foreground : root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
-                        font.underline: weekday.isToday
-                      }
-
-                      MouseArea {
-                        id: pick
-                        anchors.fill: parent
-                        enabled: weekday.readable
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.shownDay = weekday.modelData.key
-                      }
-                    }
-                  }
-                }
-              }
-
-              Repeater {
-                model: [
-                  {
-                    label: "Top app",
-                    value: root.day.topApp
-                      ? root.day.topApp.name + "  " + Model.formatShare(root.day.topApp.share)
-                      : "nothing yet"
-                  },
-                  {
-                    label: "vs yesterday",
-                    value: Model.formatChange(root.day.change)
-                  },
-                  {
-                    label: "Busiest day this week",
-                    value: root.day.busiestOfWeek
-                      ? Model.formatDay(root.day.busiestOfWeek.key) + "  "
-                        + Model.formatBytes(root.day.busiestOfWeek.total)
-                      : "nothing yet"
-                  },
-                  {
-                    label: "Down / up",
-                    value: Model.formatBytes(root.day.rx) + "  /  " + Model.formatBytes(root.day.tx)
-                  }
-                ]
-
-                Item {
-                  required property var modelData
-                  width: dayColumn.width
-                  height: Style.space(17)
-
-                  Text {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.label
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
-                  }
-
-                  Text {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.value
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
-                  }
-                }
-              }
-            }
-          }
-
-          // -------------------------------------------------------- year
-          Item {
-            width: parent.width
-            visible: root.scope === "year"
-            implicitHeight: yearColumn.implicitHeight
-
-            Column {
-              id: yearColumn
-              width: parent.width
-              spacing: Style.space(8)
-
-              Repeater {
-                model: History.monthSeries(root.history, root.shownYear)
-
-                Item {
-                  required property var modelData
-                  width: parent.width
-                  height: Style.space(16)
-
-                  readonly property real peak: {
-                    var top = 0
-                    var months = History.monthSeries(root.history, root.shownYear)
-                    for (var i = 0; i < months.length; i++) {
-                      if (months[i].total > top) top = months[i].total
-                    }
-                    return top
-                  }
-
-                  Text {
-                    id: monthName
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Style.space(30)
-                    text: Model.MONTHS[modelData.month - 1]
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                  }
-
-                  Rectangle {
-                    anchors.left: monthName.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: Style.space(8)
-                    radius: Style.space(2)
-                    width: {
-                      var room = parent.width - monthName.width - Style.space(56)
-                      if (peak <= 0 || modelData.total <= 0) return 0
-                      return Math.max(Style.space(2), room * (modelData.total / peak))
-                    }
-                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.45)
-                  }
-
-                  Text {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: modelData.total > 0 ? Model.formatBytes(modelData.total) : "0 B"
-                    color: modelData.total > 0 ? root.foreground : root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                  }
-                }
-              }
-
-              PanelSeparator {
-                width: parent.width
-                foreground: root.foreground
-              }
-
-              PanelSectionHeader {
-                width: parent.width
-                text: "Insights " + root.shownYear
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-              }
-
-              Grid {
-                width: parent.width
-                columns: 2
-                spacing: Style.space(6)
-
-                Repeater {
-                  model: [
-                    {
-                      title: "MOVED",
-                      value: Model.formatBytes(root.year.total),
-                      detail: Model.formatBytes(root.year.rx) + " down, "
-                        + Model.formatBytes(root.year.tx) + " up."
-                    },
-                    {
-                      title: "BUSIEST MONTHS",
-                      value: root.year.topMonths.length > 0
-                        ? root.year.topMonths.map(function (m) {
-                            return Model.MONTHS[m.month - 1]
-                          }).join(" · ")
-                        : "nothing yet",
-                      detail: "Where the year's traffic went."
-                    },
-                    {
-                      title: "DAY COUNT",
-                      value: root.year.activeDays + " of " + root.year.trackedDays + " days",
-                      detail: "Days with traffic, out of days observed."
-                    },
-                    {
-                      title: "PEAK DAY",
-                      value: root.year.peak
-                        ? Model.formatDay(root.year.peak.key) + " · " + Model.formatBytes(root.year.peak.total)
-                        : "nothing yet",
-                      detail: "Nothing above it."
-                    },
-                    {
-                      title: "LONGEST STREAK",
-                      value: root.year.streak + (root.year.streak === 1 ? " day" : " days"),
-                      detail: "Consecutive days with traffic."
-                    },
-                    {
-                      title: "AVERAGE DAY",
-                      value: Model.formatBytes(root.year.averagePerActiveDay),
-                      detail: "Per day that saw any traffic."
-                    },
-                    {
-                      title: "TOP APP",
-                      value: root.year.apps.length > 0
-                        ? root.year.apps[0].name + " · " + Model.formatShare(root.year.apps[0].share)
-                        : "nothing yet",
-                      detail: "Biggest share of the year."
-                    },
-                    {
-                      title: "UNATTRIBUTED",
-                      value: Model.formatShare(root.year.unattributedShare),
-                      detail: "QUIC and framing, which carry no per-socket count."
-                    }
-                  ]
-
-                  Rectangle {
-                    required property var modelData
-                    width: (yearColumn.width - Style.space(6)) / 2
-                    implicitHeight: cardBody.implicitHeight + Style.space(16)
-                    radius: Style.space(6)
-                    color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.05)
-
-                    Column {
-                      id: cardBody
-                      anchors.left: parent.left
-                      anchors.right: parent.right
-                      anchors.top: parent.top
-                      anchors.margins: Style.space(8)
-                      spacing: Style.space(2)
-
-                      Text {
-                        width: parent.width
-                        text: modelData.title
-                        color: root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
-                      }
-                      Text {
-                        width: parent.width
-                        wrapMode: Text.WordWrap
-                        text: modelData.value
-                        color: root.foreground
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.bodySmall
-                      }
-                      Text {
-                        width: parent.width
-                        wrapMode: Text.WordWrap
-                        text: modelData.detail
-                        color: root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Style.font.caption
-                      }
+                      wrapMode: Text.WordWrap
+                      text: modelData.detail
+                      color: root.dim
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
                     }
                   }
                 }
@@ -681,7 +687,6 @@ Panel {
 
           PanelSectionHeader {
             width: parent.width
-            visible: root.scope === "day"
             text: "Right now"
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -693,8 +698,7 @@ Panel {
             Item {
               required property var modelData
               width: column.width
-              visible: root.scope === "day"
-              height: visible ? Style.space(34) : 0
+              height: Style.space(34)
 
               readonly property bool moving: (modelData.rxRate + modelData.txRate) > 0
               readonly property bool loud: root.warnRate > 0
@@ -749,13 +753,13 @@ Panel {
 
           PanelSeparator {
             width: parent.width
-            visible: root.scope === "day" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
+            visible: root.unattributed.rxRate > 0 || root.udp.length > 0
             foreground: root.foreground
           }
 
           PanelSectionHeader {
             width: parent.width
-            visible: root.scope === "day" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
+            visible: root.unattributed.rxRate > 0 || root.udp.length > 0
             text: "Not attributable"
             foreground: root.foreground
             fontFamily: root.fontFamily
@@ -769,7 +773,7 @@ Panel {
           // be the dishonest one.
           Text {
             width: parent.width
-            visible: root.scope === "day" && (root.unattributed.rxRate > 0 || root.udp.length > 0)
+            visible: root.unattributed.rxRate > 0 || root.udp.length > 0
             text: {
               var rate = Model.GLYPH_DOWN + " " + Model.formatRate(root.unattributed.rxRate)
                 + "   " + Model.GLYPH_UP + " " + Model.formatRate(root.unattributed.txRate)

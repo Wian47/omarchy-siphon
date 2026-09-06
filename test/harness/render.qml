@@ -24,6 +24,10 @@ Window {
   function seededHistory() {
     var h = History.emptyHistory()
     var week = [
+      ["2026-03-14", { brave: [1200000000, 30000000], spotify: [220000000, 4000000] }],
+      ["2026-06-02", { curl: [640000000, 15000000] }],
+      ["2026-07-20", { brave: [880000000, 21000000], claude: [140000000, 3000000] }],
+      ["2026-08-24", { brave: [300000000, 7000000] }],
       ["2026-08-31", { brave: [420000000, 9000000], curl: [80000000, 2000000] }],
       ["2026-09-01", { brave: [310000000, 6000000], spotify: [95000000, 1000000] }],
       ["2026-09-02", {}],
@@ -103,9 +107,14 @@ Window {
   // One frame per state worth looking at. Each grab is asynchronous, so the
   // next state is only set once the previous image has been written.
   readonly property var frames: [
-    { name: "01-today", day: harness.todayKey },
-    { name: "02-past-day", day: "2026-09-04" },
-    { name: "03-empty-day", day: "2026-09-02" }
+    { name: "01-day-today", scope: "day", anchor: harness.todayKey, cells: 7 },
+    { name: "02-day-past", scope: "day", anchor: "2026-09-04", cells: 7 },
+    { name: "03-day-empty", scope: "day", anchor: "2026-09-02", cells: 7 },
+    { name: "04-week", scope: "week", anchor: "2026-08-31", cells: 7 },
+    { name: "05-week-past", scope: "week", anchor: "2026-08-24", cells: 7 },
+    { name: "06-month", scope: "month", anchor: "2026-09-01", cells: 30 },
+    { name: "07-month-past", scope: "month", anchor: "2026-03-01", cells: 31 },
+    { name: "08-year", scope: "year", anchor: "2026-01-01", cells: 12 }
   ]
   property int frame: 0
   property int failures: 0
@@ -115,16 +124,24 @@ Window {
     harness.failures++
   }
 
-  // The week strip's delegates, found by the properties they were given rather
-  // than by walking a fixed path, so rearranging the column cannot silently
-  // make this check pass against nothing.
-  function weekCells(item, found) {
+  // Found by the properties they were given rather than by walking a fixed
+  // path, so rearranging the column cannot silently make a check pass against
+  // nothing.
+  function findAll(item, has, found) {
     var kids = item.children
     for (var i = 0; i < kids.length; i++) {
-      if (kids[i].readable !== undefined && kids[i].modelData !== undefined) found.push(kids[i])
-      else weekCells(kids[i], found)
+      if (kids[i][has] !== undefined) found.push(kids[i])
+      else findAll(kids[i], has, found)
     }
     return found
+  }
+
+  function stripCells() {
+    return findAll(siphon, "readable", [])
+  }
+
+  function scopeButtons() {
+    return findAll(siphon, "selected", [])
   }
 
   function pickerOf(cell) {
@@ -134,9 +151,11 @@ Window {
     return null
   }
 
-  function checkStrip(shown) {
-    var cells = weekCells(siphon, [])
-    if (cells.length !== 7) return complain("the week strip has " + cells.length + " days, not 7")
+  function checkStrip(want) {
+    var cells = stripCells()
+    if (cells.length !== want.cells) {
+      return complain(want.name + " strip has " + cells.length + " bars, not " + want.cells)
+    }
     var lit = []
     var marked = []
     for (var i = 0; i < cells.length; i++) {
@@ -144,48 +163,116 @@ Window {
       var key = cell.modelData.key
       if (cell.isShown) lit.push(key)
       if (cell.isToday) marked.push(key)
-      var reachable = key <= harness.todayKey
+      var reachable = key <= siphon.reachable
       if (cell.readable !== reachable) complain(key + " is readable=" + cell.readable)
       var picker = pickerOf(cell)
       if (!picker) complain(key + " has nothing to click")
       else if (picker.enabled !== reachable) complain(key + " click enabled=" + picker.enabled)
     }
-    if (lit.length !== 1 || lit[0] !== shown) complain("lit days are " + lit + ", expected " + shown)
-    if (marked.length !== 1 || marked[0] !== harness.todayKey) complain("today marked as " + marked)
+    var wantLit = want.scope === "day" ? [want.anchor] : []
+    if (String(lit) !== String(wantLit)) complain(want.name + " lit " + lit + ", expected " + wantLit)
+    // A day view's strip is the week around it, which can hold today even when
+    // the day being read does not, so the mark follows the strip's own range.
+    var first = cells[0].modelData.key
+    var last = cells[cells.length - 1].modelData.key
+    var wantMarked = first <= siphon.reachable && siphon.reachable <= last ? [siphon.reachable] : []
+    if (String(marked) !== String(wantMarked)) complain(want.name + " marked " + marked + ", expected " + wantMarked)
   }
 
-  // The click itself, not an assignment standing in for it.
-  function checkClickSelects() {
-    var cells = weekCells(siphon, [])
-    for (var i = 0; i < cells.length; i++) {
-      var picker = pickerOf(cells[i])
-      if (!picker || !picker.enabled) continue
-      siphon.shownDay = harness.todayKey
+  // Clicking a bar is a size down: a bar in a year opens that month, a bar in
+  // a month or a week opens that day, and a bar in a day view moves the day.
+  function checkClickOpens() {
+    for (var f = 0; f < frames.length; f++) {
+      siphon.scope = frames[f].scope
+      siphon.anchor = frames[f].anchor
+      var cells = stripCells()
+      var child = siphon.period.childScope
+      for (var i = cells.length - 1; i >= 0; i--) {
+        var picker = pickerOf(cells[i])
+        if (!picker || !picker.enabled) continue
+        var key = cells[i].modelData.key
+        picker.clicked(null)
+        if (siphon.scope !== child) {
+          complain(frames[f].name + " opened scope " + siphon.scope + ", expected " + child)
+        }
+        if (siphon.anchor !== History.periodStart(child, key)) {
+          complain(frames[f].name + " opened " + siphon.anchor + ", expected the period holding " + key)
+        }
+        break
+      }
+    }
+  }
+
+  function checkScopeButtons() {
+    var buttons = scopeButtons()
+    if (buttons.length !== History.SCOPES.length) {
+      return complain("the panel offers " + buttons.length + " sizes, not " + History.SCOPES.length)
+    }
+    for (var i = 0; i < buttons.length; i++) {
+      var picker = pickerOf(buttons[i])
+      if (!picker) { complain(buttons[i].modelData + " has nothing to click"); continue }
       picker.clicked(null)
-      if (siphon.shownDay !== cells[i].modelData.key) {
-        complain("clicking " + cells[i].modelData.key + " left the panel on " + siphon.shownDay)
+      if (siphon.scope !== buttons[i].modelData) {
+        complain("clicking " + buttons[i].modelData + " left the panel on " + siphon.scope)
+      }
+      if (!buttons[i].selected) complain(buttons[i].modelData + " is selected but does not say so")
+    }
+  }
+
+  // Switching size from a period holding today lands on today, so the way to
+  // this morning is one click rather than a walk back through the calendar.
+  function checkSwitchingKeepsThePlace() {
+    siphon.scope = "year"
+    siphon.anchor = "2026-01-01"
+    siphon.selectScope("day")
+    if (siphon.anchor !== harness.todayKey) {
+      complain("leaving this year for a day landed on " + siphon.anchor + ", not today")
+    }
+    siphon.scope = "year"
+    siphon.anchor = "2024-01-01"
+    siphon.selectScope("day")
+    if (siphon.anchor !== "2024-01-01") {
+      complain("leaving a past year for a day landed on " + siphon.anchor + ", not where it was")
+    }
+  }
+
+  // Nothing has happened after today, so nothing offers to step there.
+  function checkNextStops() {
+    for (var f = 0; f < frames.length; f++) {
+      siphon.scope = frames[f].scope
+      siphon.anchor = frames[f].anchor
+      var arrows = findAll(siphon, "iconText", []).filter(function (a) {
+        return a.iconText === Model.GLYPH_NEXT
+      })
+      if (arrows.length !== 1) { complain(frames[f].name + " has " + arrows.length + " next arrows"); continue }
+      var open = siphon.period.to < harness.todayKey
+      if (arrows[0].enabled !== open) {
+        complain(frames[f].name + " next arrow enabled=" + arrows[0].enabled + ", expected " + open)
       }
     }
   }
 
   function pose() {
     if (frame >= frames.length) {
-      checkClickSelects()
+      checkClickOpens()
+      checkScopeButtons()
+      checkSwitchingKeepsThePlace()
+      checkNextStops()
       console.log(harness.failures === 0
-        ? "rendered " + frames.length + " frames, the week strip checks out"
-        : harness.failures + " week strip check(s) failed")
+        ? "rendered " + frames.length + " frames, the period controls check out"
+        : harness.failures + " period check(s) failed")
       Qt.exit(harness.failures === 0 ? 0 : 1)
       return
     }
-    siphon.shownDay = frames[frame].day
+    siphon.scope = frames[frame].scope
+    siphon.anchor = frames[frame].anchor
     console.log(frames[frame].name
-      + " shownDay=" + siphon.shownDay
-      + " ring=" + Model.formatDay(siphon.shownDay)
-      + " total=" + Model.formatBytes(siphon.day.total)
-      + " topApp=" + (siphon.day.topApp ? siphon.day.topApp.name : "none")
-      + " change=" + Model.formatChange(siphon.day.change)
-      + " apps=" + siphon.day.apps.length)
-    checkStrip(frames[frame].day)
+      + " " + siphon.periodName
+      + " total=" + Model.formatBytes(siphon.period.total)
+      + " topApp=" + (siphon.period.topApp ? siphon.period.topApp.name : "none")
+      + " " + Model.PREVIOUS_LABEL[siphon.scope] + "=" + Model.formatChange(siphon.period.change)
+      + " bars=" + siphon.period.series.length)
+    checkStrip(frames[frame])
     settle.start()
   }
 

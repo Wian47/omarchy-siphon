@@ -2,7 +2,7 @@
 
 Which application is eating your bandwidth, live in the Omarchy bar.
 
-![The panel: today's traffic as a ring of applications, the week around it, and the live per-application rates underneath](preview.png)
+![The panel's day view: a day's traffic as a ring of applications, the week around it, and the live per-application rates underneath](preview.png)
 
 Every other network widget tells you *how fast* the link is going. Siphon tells
 you *who is doing it*. Applications are ranked by what is moving right now, so
@@ -15,21 +15,21 @@ connection counts and a live rate in the bar. The bar label holds a fixed
 width, so the widget does not resize and shunt its neighbours along every time
 the rate crosses a digit or a unit.
 
-**A day.** A ring of the day's traffic by application with a legend, the week
-it sits in as a bar chart, and the four numbers worth knowing: the top app and
-its share, the change since yesterday, the busiest day of the week, and the
-download against upload split.
+**A day, a week, a month or a year.** Pick the size at the top of the panel and
+everything under it follows: a ring of that period's traffic by application
+with a legend, its parts as a bar chart, and the four numbers worth knowing.
+The top app and its share, the change against the period before, the busiest
+part, and the download against upload split.
 
-Click any day in the week strip to read that day instead. The lit bar is the
-day being shown and the underlined name is today, so the way back is always
-marked. Days the week has not reached yet are not clickable.
+The arrows step by one of whatever size is selected, and stop at today because
+nothing has happened after it. Clicking a bar is a size down: a bar in the year
+opens that month, a bar in a month or a week opens that day, and a bar in the
+day view moves the day. Switching size keeps your place, so leaving the year
+for the day view lands on this morning rather than on the first of January.
 
-**This year.** Every month as a bar, and a grid of insight cards: total moved,
-busiest months, days with traffic out of days observed, peak day, longest
-streak, average day, top app, and how much could not be attributed at all.
-
-Use the calendar button in the panel to move between the day and the year, and
-the arrows to step through years.
+A period longer than a day also carries a grid of insight cards: days with
+traffic out of days observed, the peak and quietest days, the longest streak,
+the average day, and how much could not be attributed at all.
 
 ## Where the history lives
 
@@ -118,8 +118,10 @@ rm -rf ~/.config/omarchy/siphon    # optional: forget the recorded history
 
 ## Keys and clicks
 
-- **Click a day** in the week strip to read that day's traffic. The panel
-  opens on today again next time.
+- **Pick a size** at the top of the panel to read a day, a week, a month or a
+  year, and **the arrows** to step through them.
+- **Click a bar** in the strip to open the part of the period it stands for.
+  The panel opens on the period holding today again next time.
 - **Middle-click the bar icon**, or press `r` in the panel, to reset the
   session totals.
 - **Escape** closes the panel.
@@ -127,8 +129,8 @@ rm -rf ~/.config/omarchy/siphon    # optional: forget the recorded history
 ## Tests
 
 ```bash
-node test/model.test.js    # 51 tests, no compositor
-node test/history.test.js  # 28 tests for the stored history
+node test/model.test.js    # 49 tests, no compositor
+node test/history.test.js  # 32 tests for the stored history
 node test/wiring.test.js   # cross-file checks: QML parses, bindings resolve
 node test/live.js 5        # drives the model against this machine's sockets
 bash test/render.sh       # draws the panel offscreen, checks the week strip
@@ -143,12 +145,14 @@ calls, a setting offered in the manifest that no code reads, and a `Service {}`
 declared in the panel, which the bar would build twice.
 
 `render.sh` loads the real `Panel.qml` against stand-in shell types and a
-seeded history, with Qt drawing to memory instead of a screen. It checks that
-one day is lit and it is the one being read, that today stays marked wherever
-the panel is, that no day the week has not reached is offered as clickable, and
-that a click moves the panel. It also leaves the pictures in `.render/`, because
-a layout is something to look at rather than something to assert about. It needs
-the Qt QML tools and skips without them.
+seeded history, with Qt drawing to memory instead of a screen. It poses every
+size and checks what the strip claims: the right number of bars, one lit in the
+day view and it is the day being read, today marked wherever the panel is, no
+part of the calendar that has not happened offered as clickable, the arrow to
+the next period closed at today, and a real click opening the part it stands
+for. It also leaves the pictures in `.render/`, because a layout is something
+to look at rather than something to assert about. It needs the Qt QML tools and
+skips without them.
 
 ## Licence
 
