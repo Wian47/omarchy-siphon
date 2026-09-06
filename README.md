@@ -127,7 +127,7 @@ rm -rf ~/.config/omarchy/siphon    # optional: forget the recorded history
 ## Tests
 
 ```bash
-node test/model.test.js    # 47 tests, no compositor
+node test/model.test.js    # 51 tests, no compositor
 node test/history.test.js  # 28 tests for the stored history
 node test/wiring.test.js   # cross-file checks: QML parses, bindings resolve
 node test/live.js 5        # drives the model against this machine's sockets

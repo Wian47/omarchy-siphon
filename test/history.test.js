@@ -310,5 +310,140 @@ test("an empty year answers without throwing", () => {
   assert.strictEqual(year.averagePerActiveDay, 0)
 })
 
+console.log("\nHistory periods")
+
+test("a period covers the days a person means by its name", () => {
+  const range = (scope, key) => {
+    const start = api.periodStart(scope, key)
+    return [start, api.periodEnd(scope, start)]
+  }
+  assert.deepStrictEqual(range("day", "2026-09-04"), ["2026-09-04", "2026-09-04"])
+  assert.deepStrictEqual(range("week", "2026-09-04"), ["2026-08-31", "2026-09-06"])
+  assert.deepStrictEqual(range("month", "2026-09-04"), ["2026-09-01", "2026-09-30"])
+  assert.deepStrictEqual(range("year", "2026-09-04"), ["2026-01-01", "2026-12-31"])
+  assert.deepStrictEqual(range("month", "2028-02-14"), ["2028-02-01", "2028-02-29"])
+})
+
+// Anchoring a month on an arbitrary day is the classic way to lose one. The
+// 31st of January has to become the 28th of February, and a month later it is
+// still the 28th, so a year of stepping forward lands three days early.
+test("stepping a month back and forward returns to where it started", () => {
+  let key = api.periodStart("month", "2026-01-31")
+  for (let i = 0; i < 14; i++) key = api.shiftPeriod("month", key, 1)
+  for (let i = 0; i < 14; i++) key = api.shiftPeriod("month", key, -1)
+  assert.strictEqual(key, "2026-01-01")
+})
+
+test("stepping a period crosses the boundary above it", () => {
+  assert.strictEqual(api.shiftPeriod("day", "2026-01-01", -1), "2025-12-31")
+  assert.strictEqual(api.shiftPeriod("week", "2026-08-31", 1), "2026-09-07")
+  assert.strictEqual(api.shiftPeriod("month", "2026-12-01", 1), "2027-01-01")
+  assert.strictEqual(api.shiftPeriod("month", "2026-01-01", -1), "2025-12-01")
+  assert.strictEqual(api.shiftPeriod("year", "2026-01-01", 1), "2027-01-01")
+})
+
+console.log("\nHistory.periodInsights")
+
+const fourDays = () => seed([
+  ["2026-09-02", { brave: { rx: 100, tx: 0 } }],
+  ["2026-09-03", { brave: { rx: 400, tx: 0 } }],
+  ["2026-09-04", { brave: { rx: 300, tx: 0 }, spotify: { rx: 100, tx: 0 } }]
+])
+
+test("a day reads its top app, the week around it and the change since yesterday", () => {
+  const day = api.periodInsights(fourDays(), "day", "2026-09-04")
+  assert.strictEqual(day.total, 400)
+  assert.strictEqual(day.topApp.name, "brave")
+  assert.strictEqual(day.topApp.share, 0.75)
+  assert.strictEqual(day.previous, 400)
+  assert.strictEqual(day.change, 0, "same as yesterday reads as no change")
+  assert.strictEqual(day.from, "2026-09-04")
+  assert.strictEqual(day.series.length, 7, "a day has no parts, so its strip is its week")
+  assert.strictEqual(day.series[0].key, "2026-08-31", "the week starts on Monday")
+  assert.strictEqual(day.busiest.key, "2026-09-03")
+  assert.strictEqual(day.childScope, "day")
+})
+
+test("a fall since the period before is a negative change, not an absolute one", () => {
+  const h = seed([
+    ["2026-09-03", { brave: { rx: 1000, tx: 0 } }],
+    ["2026-09-04", { brave: { rx: 250, tx: 0 } }]
+  ])
+  assert.strictEqual(api.periodInsights(h, "day", "2026-09-04").change, -750)
+})
+
+test("a week totals its own days and compares against the week before", () => {
+  const h = seed([
+    ["2026-08-26", { brave: { rx: 1000, tx: 0 } }],
+    ["2026-09-02", { brave: { rx: 100, tx: 0 } }],
+    ["2026-09-03", { brave: { rx: 400, tx: 0 } }],
+    ["2026-09-04", { spotify: { rx: 300, tx: 0 } }]
+  ])
+  const week = api.periodInsights(h, "week", "2026-09-04")
+  assert.deepStrictEqual([week.from, week.to], ["2026-08-31", "2026-09-06"])
+  assert.strictEqual(week.total, 800)
+  assert.strictEqual(week.previous, 1000, "the week before is the one it is measured against")
+  assert.strictEqual(week.change, -200)
+  assert.strictEqual(week.series.length, 7)
+  assert.strictEqual(week.busiest.key, "2026-09-03")
+  assert.strictEqual(week.topApp.name, "brave")
+  assert.strictEqual(week.activeDays, 3)
+  assert.strictEqual(week.childScope, "day", "clicking a bar in a week opens that day")
+})
+
+test("a month is a strip of its own days and a year is a strip of months", () => {
+  const h = fourDays()
+  const month = api.periodInsights(h, "month", "2026-09-04")
+  assert.strictEqual(month.series.length, 30)
+  assert.strictEqual(month.series[0].key, "2026-09-01")
+  assert.strictEqual(month.childScope, "day")
+
+  const year = api.periodInsights(h, "year", "2026-09-04")
+  assert.strictEqual(year.series.length, 12)
+  assert.strictEqual(year.series[8].key, "2026-09")
+  assert.strictEqual(year.childScope, "month", "clicking a bar in a year opens that month")
+  assert.strictEqual(year.total, 900, "the year holds every day the seed recorded")
+})
+
+// A period is 365 days but only the days up to today have been observed.
+// Counting the rest as tracked would drag every average down as it went on.
+test("only days up to today count as tracked", () => {
+  const year = api.periodInsights(seed([["2026-01-10", { brave: { rx: 100, tx: 0 } }]]), "year", "2026-01-10")
+  const expected = api.daysBetween("2026-01-01", api.dayKey(new Date())) + 1
+  assert.strictEqual(year.trackedDays, expected)
+  assert.ok(year.trackedDays < 366, "the rest of the year is not tracked yet")
+})
+
+// A pruned day keeps its bytes and loses its applications. Summing the apps
+// would report a week as smaller than the days drawn in its own strip.
+test("a period keeps the bytes of days whose applications aged out", () => {
+  let h = seed([
+    ["2026-05-01", { brave: { rx: 1000, tx: 0 } }],
+    ["2026-09-04", { brave: { rx: 60, tx: 0 } }]
+  ])
+  h = api.prune(h, "2026-09-04", 95)
+  assert.ok(!h.days["2026-05-01"], "the day under test has to be out of the detail window")
+
+  const week = api.periodInsights(h, "week", "2026-05-01")
+  assert.strictEqual(week.total, 1000, "the bytes survive")
+  assert.strictEqual(week.apps.length, 0, "the breakdown does not")
+
+  const month = api.periodInsights(h, "month", "2026-05-01")
+  assert.strictEqual(month.total, 1000)
+  assert.strictEqual(month.topApp.name, "brave", "a month keeps what it folded in")
+})
+
+test("an empty period answers without throwing", () => {
+  for (const scope of api.SCOPES) {
+    const empty = api.periodInsights(api.emptyHistory(), scope, "2026-09-04")
+    assert.strictEqual(empty.total, 0, scope + " total")
+    assert.strictEqual(empty.topApp, null, scope + " top app")
+    assert.strictEqual(empty.peak, null, scope + " peak")
+    assert.strictEqual(empty.busiest, null, scope + " busiest")
+    assert.strictEqual(empty.averagePerActiveDay, 0, scope + " average")
+    assert.ok(empty.series.length > 0, scope + " strip")
+  }
+})
+
 console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`)
 process.exit(failures === 0 ? 0 : 1)

@@ -456,6 +456,49 @@ function emptyDayNote(dayKey, todayKey, total, detailed) {
 
 var WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+// The label the period navigator shows, and the caption on anything reading
+// that period.
+function periodLabel(scope, from, to) {
+  if (scope === "week") return formatDay(from) + " \u2013 " + formatDay(to)
+  if (scope === "month") return MONTHS[Number(String(from).slice(5, 7)) - 1] + " " + String(from).slice(0, 4)
+  if (scope === "year") return String(from).slice(0, 4)
+  return formatDay(from)
+}
+
+// The bar strip is named only where the names fit. A month has thirty-odd
+// bars, so it gets a ruler every seventh day rather than a word under each.
+function stripLabel(scope, key, index) {
+  if (scope === "year") return MONTHS[index]
+  if (scope === "month") {
+    var day = Number(String(key).slice(8, 10))
+    return day % 7 === 1 ? String(day) : ""
+  }
+  return WEEKDAYS[index]
+}
+
+var PREVIOUS_LABEL = {
+  day: "vs yesterday",
+  week: "vs last week",
+  month: "vs last month",
+  year: "vs last year"
+}
+
+function busiestLabel(scope) {
+  if (scope === "day") return "Busiest day this week"
+  if (scope === "year") return "Busiest month"
+  return "Busiest day"
+}
+
+// What the legend says when there is no application breakdown to show. Three
+// different facts share that empty space. A period whose bytes are known but
+// whose apps were folded away is not a period that saw no traffic, and one
+// still running is not the same as one that ended with nothing.
+function emptyPeriodNote(scope, label, current, total) {
+  if (total > 0) return "Older than the detail window, so no application breakdown."
+  if (current) return "Nothing recorded yet."
+  return "Nothing recorded " + (scope === "day" ? "on " : "in ") + label + "."
+}
+
 var GLYPH_CALENDAR = codepoint(0xF00ED)  // md-calendar
 var GLYPH_BACK = codepoint(0xF004D)      // md-arrow_left
 var GLYPH_PREV = codepoint(0xF0141)      // md-chevron_left

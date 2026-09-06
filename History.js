@@ -316,6 +316,118 @@ function unattributedShare(bucket) {
   return seen > 0 ? loose / seen : 0
 }
 
+// A period is a scope and the day it starts on. Day, week, month and year are
+// the same thing at four sizes, so one of these answers the whole panel rather
+// than each scope carrying its own view.
+var SCOPES = ["day", "week", "month", "year"]
+
+// What the bar strip under the ring is made of, and so what clicking one of
+// its bars opens. A single day has no parts, so its strip is the week around
+// it and clicking a bar stays inside the day scope.
+var CHILD_SCOPE = { day: "day", week: "day", month: "day", year: "month" }
+
+function shiftMonths(key, count) {
+  var month = Number(String(key).slice(5, 7)) - 1 + count
+  var year = Number(yearOf(key)) + Math.floor(month / 12)
+  return year + "-" + pad2(((month % 12) + 12) % 12 + 1) + "-01"
+}
+
+// Anchors are always kept on the period's first day. Anchoring on an arbitrary
+// day instead would make stepping months drift, because the 31st of January
+// has to become the 28th of February and never finds its way back.
+function periodStart(scope, key) {
+  if (scope === "week") return weekStart(key, 1)
+  if (scope === "month") return monthOf(key) + "-01"
+  if (scope === "year") return yearOf(key) + "-01-01"
+  return String(key)
+}
+
+function periodEnd(scope, start) {
+  if (scope === "week") return shiftDays(start, 6)
+  if (scope === "month") return shiftDays(shiftMonths(start, 1), -1)
+  if (scope === "year") return yearOf(start) + "-12-31"
+  return String(start)
+}
+
+function shiftPeriod(scope, start, count) {
+  if (scope === "week") return shiftDays(start, 7 * count)
+  if (scope === "month") return shiftMonths(start, count)
+  if (scope === "year") return (Number(yearOf(start)) + count) + "-01-01"
+  return shiftDays(start, count)
+}
+
+function periodSeries(history, scope, start) {
+  if (scope === "year") return monthSeries(history, yearOf(start))
+  if (scope === "day") {
+    var week = weekStart(start, 1)
+    return daySeries(history, week, shiftDays(week, 6))
+  }
+  return daySeries(history, start, periodEnd(scope, start))
+}
+
+// Months keep the app breakdown of the days pruned out of them, so a month or
+// a year is asked for its own bucket rather than rebuilt from days that no
+// longer carry one. A week has no such bucket and is summed from its days,
+// which is why the totals below come from the day series instead: those are
+// right either way, and a week straddling the retention edge would otherwise
+// report only the part it can still name.
+function periodBucket(history, scope, start) {
+  if (scope === "day") return dayTotals(history, start)
+  if (scope === "month") return monthTotals(history, monthOf(start))
+  if (scope === "year") return yearTotals(history, yearOf(start))
+  var bucket = newBucket()
+  var days = daySeries(history, start, periodEnd(scope, start))
+  for (var i = 0; i < days.length; i++) {
+    var totals = dayTotals(history, days[i].key)
+    bucket = mergeInto(bucket, { apps: totals.apps, unattributed: totals.un })
+  }
+  return bucket
+}
+
+// Everything any of the four views puts on screen. Numbers only: the panel
+// owns the prose and the units, so these stay comparable and testable.
+function periodInsights(history, scope, key) {
+  var start = periodStart(scope, key)
+  var end = periodEnd(scope, start)
+  var days = daySeries(history, start, end)
+  var today = dayKey(new Date())
+  var tracked = []
+  var rx = 0
+  var tx = 0
+  for (var i = 0; i < days.length; i++) {
+    rx += days[i].rx
+    tx += days[i].tx
+    if (days[i].key <= today) tracked.push(days[i])
+  }
+  var bucket = periodBucket(history, scope, start)
+  var ranked = rankApps(bucket, 0)
+  var series = periodSeries(history, scope, start)
+  var before = shiftPeriod(scope, start, -1)
+  var previous = seriesTotal(daySeries(history, before, periodEnd(scope, before)))
+  return {
+    scope: scope,
+    from: start,
+    to: end,
+    childScope: CHILD_SCOPE[scope],
+    total: rx + tx,
+    rx: rx,
+    tx: tx,
+    apps: ranked,
+    topApp: ranked.length > 0 && ranked[0].total > 0 ? ranked[0] : null,
+    series: series,
+    busiest: peakDay(series),
+    trackedDays: tracked.length,
+    activeDays: activeDays(tracked),
+    peak: peakDay(tracked),
+    quietest: quietestDay(tracked),
+    streak: longestStreak(tracked),
+    averagePerActiveDay: averagePerActiveDay(tracked),
+    previous: previous,
+    change: (rx + tx) - previous,
+    unattributedShare: unattributedShare(bucket)
+  }
+}
+
 function yearRange(year) {
   return { from: year + "-01-01", to: year + "-12-31" }
 }

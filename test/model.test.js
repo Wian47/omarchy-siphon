@@ -507,5 +507,48 @@ test("a day with no record is not called aged out", () => {
     "Nothing recorded on Sep 2.")
 })
 
+// The navigator names the period it is sitting on, and that name is the only
+// thing telling a reader whether a number covers a day or a decade.
+test("a period is named the way a person would say it", () => {
+  assert.strictEqual(api.periodLabel("day", "2026-09-04", "2026-09-04"), "Sep 4")
+  assert.strictEqual(api.periodLabel("week", "2026-08-31", "2026-09-06"), "Aug 31 – Sep 6")
+  assert.strictEqual(api.periodLabel("month", "2026-09-01", "2026-09-30"), "Sep 2026")
+  assert.strictEqual(api.periodLabel("year", "2026-01-01", "2026-12-31"), "2026")
+})
+
+// Thirty-one names do not fit across a panel, so a month is ruled rather than
+// labelled. Every seventh day keeps the marks under the same weekday.
+test("the strip is named where the names fit and ruled where they do not", () => {
+  assert.strictEqual(api.stripLabel("day", "2026-09-04", 4), "Fri")
+  assert.strictEqual(api.stripLabel("week", "2026-09-04", 4), "Fri")
+  assert.strictEqual(api.stripLabel("year", "2026-09", 8), "Sep")
+  const ruled = []
+  for (let day = 1; day <= 31; day++) {
+    const label = api.stripLabel("month", "2026-09-" + String(day).padStart(2, "0"), day - 1)
+    if (label !== "") ruled.push(label)
+  }
+  assert.deepStrictEqual(ruled, ["1", "8", "15", "22", "29"])
+})
+
+test("every scope has a word for the period before it and for its busiest part", () => {
+  for (const scope of ["day", "week", "month", "year"]) {
+    assert.ok(api.PREVIOUS_LABEL[scope], scope + " has nothing to compare against")
+    assert.ok(api.busiestLabel(scope).length > 0, scope + " has no busiest label")
+  }
+  assert.strictEqual(api.PREVIOUS_LABEL.week, "vs last week")
+  assert.strictEqual(api.busiestLabel("year"), "Busiest month", "a year's parts are months")
+  assert.strictEqual(api.busiestLabel("day"), "Busiest day this week", "a day's strip is its week")
+})
+
+// Three facts share one line of empty space under the ring, and switching
+// periods makes all three reachable in every scope.
+test("an empty period says which kind of empty it is", () => {
+  assert.strictEqual(api.emptyPeriodNote("day", "Sep 5", true, 0), "Nothing recorded yet.")
+  assert.strictEqual(api.emptyPeriodNote("day", "Sep 2", false, 0), "Nothing recorded on Sep 2.")
+  assert.strictEqual(api.emptyPeriodNote("month", "Jan 2026", false, 0), "Nothing recorded in Jan 2026.")
+  assert.strictEqual(api.emptyPeriodNote("week", "Jan 5 – Jan 11", false, 4000000),
+    "Older than the detail window, so no application breakdown.")
+})
+
 console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`)
 process.exit(failures === 0 ? 0 : 1)
