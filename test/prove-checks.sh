@@ -93,6 +93,22 @@ attempt "a day series that skips its last day" \
   "sed -i 's/if (key === toKey) break/if (key === shiftDays(toKey, -1)) break/' History.js" \
   history
 
+attempt "a focus that reads every application instead of the one asked for" \
+  "sed -i 's/  var found = bucket.apps\[app\]/  var found = null/' History.js" \
+  history
+
+attempt "a focused period totalled from days that no longer name their applications" \
+  "sed -i 's/if (app) return focusOn(periodBucket/if (false) return focusOn(periodBucket/' History.js" \
+  history
+
+attempt "a period that claims a breakdown for days that lost one" \
+  "sed -i 's/return totals.detailed || totals.rx + totals.tx === 0/return true/' History.js" \
+  history
+
+attempt "an ordinal that calls the thirteenth the thirteen-third" \
+  "sed -i 's/teen >= 11 \&\& teen <= 13/false/' Model.js" \
+  model
+
 attempt "a colour scheme that hands two apps the same colour" \
   "sed -i 's/if (!taken\[candidate\]) {/if (true) {/' Model.js" \
   model
@@ -126,8 +142,20 @@ if command -v qml6 >/dev/null 2>&1; then
   attempt "a bar that no longer opens what it is a part of" \
     "sed -i 's/onClicked: root.openChild(cell.modelData.key)/onClicked: root.stepPeriod(0)/' Panel.qml" \
     render
+
+  attempt "a legend row that does not narrow the period to its application" \
+    "sed -i 's/onClicked: root.toggleFocus(entry.modelData.name)/onClicked: root.toggleFocus(\"\")/' Panel.qml" \
+    render
+
+  attempt "a focus dropped by stepping to the period next door" \
+    "sed -i 's|function stepPeriod(count) {|function stepPeriod(count) { root.focusApp = \"\"|' Panel.qml" \
+    render
+
+  attempt "a flat strip left to pass for a quiet one" \
+    "sed -i 's|visible: root.focusApp !== \"\" \&\& (root.period.partial |visible: false \&\& (root.period.partial |' Panel.qml" \
+    render
 else
-  echo "  skip   the five period control breaks, qml6 is not installed"
+  echo "  skip   the eight period and focus control breaks, qml6 is not installed"
 fi
 
 echo

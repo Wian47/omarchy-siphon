@@ -64,7 +64,12 @@ Panel {
   property string anchor: History.periodStart(scope, todayKey)
   onTodayKeyChanged: root.anchor = History.periodStart(root.scope, todayKey)
 
-  readonly property var period: History.periodInsights(history, scope, anchor, todayKey)
+  // An application to read the period through, or "" for all of them. Focus is
+  // orthogonal to the period and survives stepping and resizing, because the
+  // question it asks outlives any one week.
+  property string focusApp: ""
+
+  readonly property var period: History.periodInsights(history, scope, anchor, todayKey, focusApp)
   readonly property var periodApps: Model.withColors(period.apps.slice(0, 7))
   readonly property string periodName: Model.periodLabel(period.scope, period.from, period.to)
   readonly property bool showsToday: period.from <= todayKey && todayKey <= period.to
@@ -77,7 +82,10 @@ Panel {
 
   onTrafficChanged: if (traffic) traffic.settings = root.settings
   onOpenedChanged: {
-    if (opened) root.anchor = History.periodStart(root.scope, root.todayKey)
+    if (opened) {
+      root.anchor = History.periodStart(root.scope, root.todayKey)
+      root.focusApp = ""
+    }
     if (!traffic) return
     traffic.watchClosely = opened
     if (opened) traffic.sample()
@@ -91,6 +99,10 @@ Panel {
   // Switching size keeps your place. A period holding today re-anchors on
   // today, so leaving the year view for the day view lands on this morning
   // rather than on the first of January.
+  function toggleFocus(name) {
+    root.focusApp = root.focusApp === name ? "" : name
+  }
+
   function selectScope(next) {
     var place = root.showsToday ? root.todayKey : root.period.from
     root.scope = next
@@ -285,6 +297,49 @@ Panel {
             }
           }
 
+          // The application the period is being read through, and the way out
+          // of it. Nothing below says it is narrowed, so this has to.
+          Rectangle {
+            id: chip
+            width: parent.width
+            height: Style.space(24)
+            visible: root.focusApp !== ""
+            radius: Style.space(6)
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.10)
+
+            Rectangle {
+              id: chipDot
+              anchors.left: parent.left
+              anchors.leftMargin: Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(6)
+              height: width
+              radius: width / 2
+              color: Model.appColor(root.focusApp)
+            }
+
+            Text {
+              anchors.left: chipDot.right
+              anchors.leftMargin: Style.space(6)
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: root.focusApp
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            PanelActionButton {
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(2)
+              anchors.verticalCenter: parent.verticalCenter
+              iconText: Model.GLYPH_CLEAR
+              tooltipText: "Read every application again"
+              foreground: root.foreground
+              onClicked: root.focusApp = ""
+            }
+          }
+
           Text {
             width: parent.width
             visible: root.serviceError !== ""
@@ -321,8 +376,13 @@ Panel {
                 width: Style.space(96)
                 height: Style.space(96)
 
-                readonly property var slices: root.periodApps
-                readonly property real sliceTotal: root.period.total
+                // Focused, the ring is one arc against the period behind it,
+                // which is the share. Unfocused the arcs are the applications
+                // and the same denominator is the same number.
+                readonly property var slices: root.focusApp === ""
+                  ? root.periodApps
+                  : [{ total: root.period.total, color: Model.appColor(root.focusApp) }]
+                readonly property real sliceTotal: root.period.whole
                 onSlicesChanged: requestPaint()
                 onSliceTotalChanged: requestPaint()
 
@@ -332,20 +392,22 @@ Panel {
                   var mid = width / 2
                   var outer = mid - Style.space(2)
                   var inner = outer * 0.62
-                  if (sliceTotal <= 0) {
-                    ctx.beginPath()
-                    ctx.arc(mid, mid, (outer + inner) / 2, 0, Math.PI * 2)
-                    ctx.lineWidth = outer - inner
-                    ctx.strokeStyle = Qt.rgba(root.foreground.r, root.foreground.g,
-                                              root.foreground.b, 0.12)
-                    ctx.stroke()
-                    return
-                  }
+                  var radius = (outer + inner) / 2
+                  // The track is drawn every time, because the arcs rarely
+                  // close the circle. Unattributed bytes and applications past
+                  // the seventh both leave a gap that is a real quantity.
+                  ctx.beginPath()
+                  ctx.arc(mid, mid, radius, 0, Math.PI * 2)
+                  ctx.lineWidth = outer - inner
+                  ctx.strokeStyle = Qt.rgba(root.foreground.r, root.foreground.g,
+                                            root.foreground.b, 0.12)
+                  ctx.stroke()
+                  if (sliceTotal <= 0) return
                   var angle = -Math.PI / 2
                   for (var i = 0; i < slices.length; i++) {
                     var sweep = (slices[i].total / sliceTotal) * Math.PI * 2
                     ctx.beginPath()
-                    ctx.arc(mid, mid, (outer + inner) / 2, angle, angle + sweep)
+                    ctx.arc(mid, mid, radius, angle, angle + sweep)
                     ctx.lineWidth = outer - inner
                     ctx.strokeStyle = slices[i].color
                     ctx.stroke()
@@ -384,9 +446,27 @@ Panel {
                   model: root.periodApps
 
                   Item {
+                    id: entry
                     required property var modelData
+                    // Unfocused every row is lit, because none of them is the
+                    // one being read and dimming all of them says nothing.
+                    readonly property bool lit: root.focusApp === "" || root.focusApp === entry.modelData.name
+
                     width: parent.width
                     height: Style.space(15)
+
+                    Rectangle {
+                      anchors.fill: parent
+                      anchors.leftMargin: -Style.space(4)
+                      anchors.rightMargin: -Style.space(4)
+                      radius: Style.space(4)
+                      color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b,
+                                     narrow.containsMouse ? 0.08 : 0)
+
+                      Behavior on color {
+                        ColorAnimation { duration: 60 }
+                      }
+                    }
 
                     Rectangle {
                       id: dot
@@ -394,7 +474,8 @@ Panel {
                       width: Style.space(6)
                       height: width
                       radius: width / 2
-                      color: modelData.color
+                      opacity: entry.lit ? 1 : 0.3
+                      color: entry.modelData.color
                     }
 
                     Text {
@@ -404,8 +485,8 @@ Panel {
                       width: parent.width * 0.5
                       elide: Text.ElideRight
                       textFormat: Text.PlainText
-                      text: modelData.name
-                      color: root.foreground
+                      text: entry.modelData.name
+                      color: entry.lit ? root.foreground : root.dim
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.bodySmall
                     }
@@ -413,10 +494,18 @@ Panel {
                     Text {
                       anchors.right: parent.right
                       anchors.verticalCenter: parent.verticalCenter
-                      text: Model.formatBytes(modelData.total)
+                      text: Model.formatBytes(entry.modelData.total)
                       color: root.dim
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.bodySmall
+                    }
+
+                    MouseArea {
+                      id: narrow
+                      anchors.fill: parent
+                      hoverEnabled: true
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.toggleFocus(entry.modelData.name)
                     }
                   }
                 }
@@ -531,14 +620,34 @@ Panel {
               }
             }
 
+            // A strip narrowed to one application reads low for two unrelated
+            // reasons, and a reader cannot tell a quiet application from a
+            // breakdown that aged out by looking at flat bars.
+            Text {
+              width: parent.width
+              wrapMode: Text.WordWrap
+              visible: root.focusApp !== "" && (root.period.partial || root.period.total === 0)
+              text: root.period.partial
+                ? Model.focusWindowNote(History.KEEP_DAYS, root.periodName)
+                : Model.focusEmptyNote(root.focusApp, root.period.scope, root.periodName)
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
             Repeater {
               model: [
-                {
-                  label: "Top app",
-                  value: root.period.topApp
-                    ? root.period.topApp.name + "  " + Model.formatShare(root.period.topApp.share)
-                    : "nothing yet"
-                },
+                root.focusApp === ""
+                  ? {
+                    label: "Top app",
+                    value: root.period.topApp
+                      ? root.period.topApp.name + "  " + Model.formatShare(root.period.topApp.share)
+                      : "nothing yet"
+                  }
+                  : {
+                    label: "Share of the " + root.period.scope,
+                    value: Model.formatShare(root.period.share)
+                  },
                 {
                   label: Model.PREVIOUS_LABEL[root.period.scope],
                   value: Model.formatChange(root.period.change)
@@ -634,11 +743,19 @@ Panel {
                     value: Model.formatBytes(root.period.averagePerActiveDay),
                     detail: "Per day that saw any traffic."
                   },
-                  {
-                    title: "UNATTRIBUTED",
-                    value: Model.formatShare(root.period.unattributedShare),
-                    detail: "QUIC and framing, which carry no per-socket count."
-                  }
+                  root.focusApp === ""
+                    ? {
+                      title: "UNATTRIBUTED",
+                      value: Model.formatShare(root.period.unattributedShare),
+                      detail: "QUIC and framing, which carry no per-socket count."
+                    }
+                    : {
+                      title: "RANK",
+                      value: root.period.rank > 0
+                        ? Model.ordinal(root.period.rank) + " of " + root.period.appCount
+                        : "not seen",
+                      detail: "Against every other application this period."
+                    }
                 ]
 
                 Rectangle {

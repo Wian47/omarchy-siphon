@@ -31,6 +31,18 @@ A period longer than a day also carries a grid of insight cards: days with
 traffic out of days observed, the peak and quietest days, the longest streak,
 the average day, and how much could not be attributed at all.
 
+**One application at a time.** Click an application in the legend and the view
+narrows to it. The ring becomes its share of the period, the bars become its
+days, and every number under them, the change against the period before
+included, is that one application's. A focus outlives the period it was picked
+in, so you can choose an application in this week and walk back through last
+year without choosing it again.
+
+Per-application detail is kept for 95 days. Beyond that a period still knows
+what an application moved, because the month it belongs to kept that, while
+its days kept only their own totals. The panel says so under the empty strip
+rather than draw a flat month and let it pass for a quiet one.
+
 ## Where the history lives
 
 `~/.config/omarchy/siphon/history.json`, written at most once every twenty
@@ -122,6 +134,8 @@ rm -rf ~/.config/omarchy/siphon    # optional: forget the recorded history
   year, and **the arrows** to step through them.
 - **Click a bar** in the strip to open the part of the period it stands for.
   The panel opens on the period holding today again next time.
+- **Click an application** in the legend to read the period through it alone.
+  Click it again, or the cross beside its name, to read them all again.
 - **Middle-click the bar icon**, or press `r` in the panel, to reset the
   session totals.
 - **Escape** closes the panel.
@@ -145,14 +159,17 @@ calls, a setting offered in the manifest that no code reads, and a `Service {}`
 declared in the panel, which the bar would build twice.
 
 `render.sh` loads the real `Panel.qml` against stand-in shell types and a
-seeded history, with Qt drawing to memory instead of a screen. It poses every
-size and checks what the strip claims: the right number of bars, one lit in the
-day view and it is the day being read, today marked wherever the panel is, no
-part of the calendar that has not happened offered as clickable, the arrow to
-the next period closed at today, and a real click opening the part it stands
-for. It also leaves the pictures in `.render/`, because a layout is something
-to look at rather than something to assert about. It needs the Qt QML tools and
-skips without them.
+seeded history whose oldest day has been pruned, with Qt drawing to memory
+instead of a screen. It poses every size, focused and not, and checks what the
+panel claims: the right number of bars, one lit in the day view and it is the
+day being read, today marked wherever the panel is, no part of the calendar
+that has not happened offered as clickable, the arrow to the next period closed
+at today, a real click opening the part it stands for, a real click on a legend
+row narrowing the ring to the number that row showed, a focus surviving a step
+through the calendar, and a strip flattened by the retention window saying so
+instead of passing for a quiet month. It also leaves the pictures in
+`.render/`, because a layout is something to look at rather than something to
+assert about. It needs the Qt QML tools and skips without them.
 
 ## Licence
 

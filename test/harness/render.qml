@@ -47,7 +47,10 @@ Window {
       }
       h = History.record(h, week[i][0], { apps: apps, unattributed: { rx: 40000000, tx: 900000 } })
     }
-    return h
+    // The oldest seeded day falls out of the detail window, which is the only
+    // way to pose a period that knows what an application moved and cannot
+    // draw the days it moved it on.
+    return History.prune(h, harness.todayKey, History.KEEP_DAYS)
   }
 
   function liveState() {
@@ -114,7 +117,12 @@ Window {
     { name: "05-week-past", scope: "week", anchor: "2026-08-24", cells: 7 },
     { name: "06-month", scope: "month", anchor: "2026-09-01", cells: 30 },
     { name: "07-month-past", scope: "month", anchor: "2026-03-01", cells: 31 },
-    { name: "08-year", scope: "year", anchor: "2026-01-01", cells: 12 }
+    { name: "08-year", scope: "year", anchor: "2026-01-01", cells: 12 },
+    { name: "09-day-focused", scope: "day", anchor: harness.todayKey, cells: 7, focus: "curl" },
+    { name: "10-week-focused", scope: "week", anchor: "2026-08-31", cells: 7, focus: "brave" },
+    { name: "11-month-focused", scope: "month", anchor: "2026-09-01", cells: 30, focus: "brave" },
+    { name: "12-year-focused", scope: "year", anchor: "2026-01-01", cells: 12, focus: "brave" },
+    { name: "13-month-focused-past", scope: "month", anchor: "2026-03-01", cells: 31, focus: "brave" }
   ]
   property int frame: 0
   property int failures: 0
@@ -142,6 +150,19 @@ Window {
 
   function scopeButtons() {
     return findAll(siphon, "selected", [])
+  }
+
+  function legendRows() {
+    return findAll(siphon, "lit", [])
+  }
+
+  function visibleTexts(fragment) {
+    var all = findAll(siphon, "wrapMode", [])
+    var out = []
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].visible && String(all[i].text).indexOf(fragment) >= 0) out.push(all[i])
+    }
+    return out
   }
 
   function pickerOf(cell) {
@@ -185,6 +206,7 @@ Window {
     for (var f = 0; f < frames.length; f++) {
       siphon.scope = frames[f].scope
       siphon.anchor = frames[f].anchor
+      siphon.focusApp = frames[f].focus || ""
       var cells = stripCells()
       var child = siphon.period.childScope
       for (var i = cells.length - 1; i >= 0; i--) {
@@ -222,6 +244,7 @@ Window {
   // Switching size from a period holding today lands on today, so the way to
   // this morning is one click rather than a walk back through the calendar.
   function checkSwitchingKeepsThePlace() {
+    siphon.focusApp = ""
     siphon.scope = "year"
     siphon.anchor = "2026-01-01"
     siphon.selectScope("day")
@@ -241,6 +264,7 @@ Window {
     for (var f = 0; f < frames.length; f++) {
       siphon.scope = frames[f].scope
       siphon.anchor = frames[f].anchor
+      siphon.focusApp = frames[f].focus || ""
       var arrows = findAll(siphon, "iconText", []).filter(function (a) {
         return a.iconText === Model.GLYPH_NEXT
       })
@@ -252,22 +276,84 @@ Window {
     }
   }
 
+  // A legend row is the way into one application and the way back out, and
+  // the number it shows has to be the number the ring then reads.
+  function checkFocusFromTheLegend() {
+    siphon.scope = "week"
+    siphon.anchor = "2026-08-31"
+    siphon.focusApp = ""
+    var rows = legendRows()
+    if (rows.length < 2) return complain("the week legend offers " + rows.length + " applications to focus")
+    var name = rows[0].modelData.name
+    var shown = rows[0].modelData.total
+    pickerOf(rows[0]).clicked(null)
+    if (siphon.focusApp !== name) {
+      return complain("clicking " + name + " left the focus on '" + siphon.focusApp + "'")
+    }
+    if (siphon.period.total !== shown) {
+      complain("focused on " + name + " the ring reads " + siphon.period.total
+        + ", not the " + shown + " its own legend row showed")
+    }
+    if (siphon.period.whole <= siphon.period.total) {
+      complain("the week held other applications, so its whole should exceed " + name + "'s share")
+    }
+
+    siphon.stepPeriod(-1)
+    siphon.selectScope("month")
+    if (siphon.focusApp !== name) complain("moving through the calendar dropped the focus")
+
+    siphon.scope = "week"
+    siphon.anchor = "2026-08-31"
+    var again = legendRows()
+    for (var i = 0; i < again.length; i++) {
+      if (again[i].modelData.name !== name) continue
+      pickerOf(again[i]).clicked(null)
+      break
+    }
+    if (siphon.focusApp !== "") complain("clicking the focused row again left it on " + siphon.focusApp)
+  }
+
+  // Two different things flatten a focused strip, and the panel has to say
+  // which one it is rather than leave a reader to guess.
+  function checkFlatStripSaysWhy() {
+    siphon.scope = "month"
+    siphon.anchor = "2026-03-01"
+    siphon.focusApp = "brave"
+    if (!siphon.period.partial) complain("March's days should have aged out of the detail window")
+    if (siphon.period.total <= 0) complain("but March itself should still hold what brave moved")
+    if (visibleTexts("per-application breakdown").length !== 1) {
+      complain("nothing on screen says the bars fall short of the ring")
+    }
+
+    siphon.scope = "day"
+    siphon.anchor = "2026-09-02"
+    if (siphon.period.partial) complain("a day inside the window has lost nothing")
+    if (visibleTexts("No traffic from brave").length !== 1) {
+      complain("a day brave sat out does not say so")
+    }
+    siphon.focusApp = ""
+  }
+
   function pose() {
     if (frame >= frames.length) {
       checkClickOpens()
       checkScopeButtons()
       checkSwitchingKeepsThePlace()
       checkNextStops()
+      checkFocusFromTheLegend()
+      checkFlatStripSaysWhy()
       console.log(harness.failures === 0
-        ? "rendered " + frames.length + " frames, the period controls check out"
+        ? "rendered " + frames.length + " frames, the period and focus controls check out"
         : harness.failures + " period check(s) failed")
       Qt.exit(harness.failures === 0 ? 0 : 1)
       return
     }
     siphon.scope = frames[frame].scope
     siphon.anchor = frames[frame].anchor
+    siphon.focusApp = frames[frame].focus || ""
     console.log(frames[frame].name
       + " " + siphon.periodName
+      + (siphon.focusApp === "" ? "" : " [" + siphon.focusApp + "]")
       + " total=" + Model.formatBytes(siphon.period.total)
       + " topApp=" + (siphon.period.topApp ? siphon.period.topApp.name : "none")
       + " " + Model.PREVIOUS_LABEL[siphon.scope] + "=" + Model.formatChange(siphon.period.change)
