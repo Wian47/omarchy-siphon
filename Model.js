@@ -486,8 +486,36 @@ function busiestLabel(scope) {
 function emptyPeriodNote(scope, label, current, total) {
   if (total > 0) return "Older than the detail window, so no application breakdown."
   if (current) return "Nothing recorded yet."
-  return "Nothing recorded " + (scope === "day" ? "on " : "in ") + label + "."
+  return "Nothing recorded " + periodPreposition(scope) + label + "."
 }
 
+// A day is a date and the rest are spans, so one takes "on" and three take "in".
+function periodPreposition(scope) {
+  return scope === "day" ? "on " : "in "
+}
+
+var ORDINALS = ["th", "st", "nd", "rd"]
+
+// The teens take "th" whatever digit they end on, which is the only reason
+// this is not a lookup on the last digit alone.
+function ordinal(n) {
+  var teen = n % 100
+  return n + (teen >= 11 && teen <= 13 ? "th" : (ORDINALS[n % 10] || "th"))
+}
+
+// A strip narrowed to one application can read low for two unrelated reasons,
+// and the difference matters. The application moved nothing, or the period
+// reaches back past the window where days still carry a breakdown, which their
+// totals outlive.
+function focusEmptyNote(app, scope, label) {
+  return "No traffic from " + app + " " + periodPreposition(scope) + label + "."
+}
+
+function focusWindowNote(days, label) {
+  return "Only the last " + days + " days keep a per-application breakdown, so the bars "
+    + "and day counts cover part of " + label + " rather than all of it."
+}
+
+var GLYPH_CLEAR = codepoint(0xF0156)     // md-close
 var GLYPH_PREV = codepoint(0xF0141)      // md-chevron_left
 var GLYPH_NEXT = codepoint(0xF0142)      // md-chevron_right

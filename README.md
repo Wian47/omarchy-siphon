@@ -129,8 +129,8 @@ rm -rf ~/.config/omarchy/siphon    # optional: forget the recorded history
 ## Tests
 
 ```bash
-node test/model.test.js    # 49 tests, no compositor
-node test/history.test.js  # 32 tests for the stored history
+node test/model.test.js    # 51 tests, no compositor
+node test/history.test.js  # 38 tests for the stored history
 node test/wiring.test.js   # cross-file checks: QML parses, bindings resolve
 node test/live.js 5        # drives the model against this machine's sockets
 bash test/render.sh       # draws the panel offscreen, checks the week strip

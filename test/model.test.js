@@ -530,5 +530,26 @@ test("an empty period says which kind of empty it is", () => {
     "Older than the detail window, so no application breakdown.")
 })
 
+// A rank card reads "3rd of 11", so the teens are the case that matters:
+// thirteenth ends in a three and is still a "th".
+test("an ordinal handles the teens as well as the digits", () => {
+  assert.deepStrictEqual([1, 2, 3, 4, 5].map(api.ordinal), ["1st", "2nd", "3rd", "4th", "5th"])
+  assert.deepStrictEqual([11, 12, 13].map(api.ordinal), ["11th", "12th", "13th"])
+  assert.deepStrictEqual([21, 22, 23, 111, 112].map(api.ordinal),
+    ["21st", "22nd", "23rd", "111th", "112th"])
+})
+
+// A strip narrowed to one application reads low for two unrelated reasons, and
+// telling a quiet application from a lost breakdown is the whole point of
+// saying anything there at all.
+test("a focused strip says which of the two reasons flattened it", () => {
+  assert.strictEqual(api.focusEmptyNote("brave", "day", "Sep 2"),
+    "No traffic from brave on Sep 2.")
+  assert.strictEqual(api.focusEmptyNote("spotify", "month", "Jan 2026"),
+    "No traffic from spotify in Jan 2026.")
+  assert.ok(api.focusWindowNote(95, "May 2026").startsWith("Only the last 95 days"))
+  assert.ok(api.focusWindowNote(95, "May 2026").includes("May 2026"))
+})
+
 console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`)
 process.exit(failures === 0 ? 0 : 1)

@@ -193,6 +193,23 @@ function dayTotals(history, key) {
   return { rx: 0, tx: 0, un: { rx: 0, tx: 0 }, apps: {}, detailed: false }
 }
 
+// A view is a period and, at most, one application inside it. Focus is a lens
+// on what a bucket is read for rather than a second set of statistics: narrow
+// what comes out of the bucket and every number built on it follows without
+// having to know it happened. An empty name is every application.
+function focusOn(bucket, app) {
+  if (!app) return { rx: bucket.rx, tx: bucket.tx }
+  var found = bucket.apps[app]
+  return { rx: found ? found.rx : 0, tx: found ? found.tx : 0 }
+}
+
+// A day can answer for one application while its breakdown is still on disk,
+// and also when it moved nothing at all, because then it has no breakdown to
+// have lost. A pruned day that moved bytes is the only day that cannot.
+function hasDetail(totals) {
+  return totals.detailed || totals.rx + totals.tx === 0
+}
+
 function monthTotals(history, monthKey) {
   var total = readBucket(history.months[monthKey])
   for (var key in history.days) {
@@ -212,23 +229,26 @@ function yearTotals(history, year) {
   return total
 }
 
-function monthSeries(history, year) {
+function monthSeries(history, year, app) {
   var out = []
   for (var month = 1; month <= 12; month++) {
     var key = year + "-" + pad2(month)
-    var bucket = monthTotals(history, key)
-    out.push({ key: key, month: month, rx: bucket.rx, tx: bucket.tx, total: bucket.rx + bucket.tx })
+    var part = focusOn(monthTotals(history, key), app)
+    out.push({ key: key, month: month, rx: part.rx, tx: part.tx,
+               total: part.rx + part.tx, detailed: true })
   }
   return out
 }
 
-function daySeries(history, fromKey, toKey) {
+function daySeries(history, fromKey, toKey, app) {
   var out = []
   var key = fromKey
   var guard = 0
   while (guard++ < 400) {
     var totals = dayTotals(history, key)
-    out.push({ key: key, rx: totals.rx, tx: totals.tx, total: totals.rx + totals.tx })
+    var part = focusOn(totals, app)
+    out.push({ key: key, rx: part.rx, tx: part.tx, total: part.rx + part.tx,
+               detailed: !app || hasDetail(totals) })
     if (key === toKey) break
     key = shiftDays(key, 1)
   }
@@ -303,6 +323,15 @@ function seriesTotal(series) {
   return total
 }
 
+function seriesSplit(series) {
+  var out = { rx: 0, tx: 0 }
+  for (var i = 0; i < series.length; i++) {
+    out.rx += series[i].rx
+    out.tx += series[i].tx
+  }
+  return out
+}
+
 function averagePerActiveDay(series) {
   var active = activeDays(series)
   return active > 0 ? seriesTotal(series) / active : 0
@@ -356,13 +385,13 @@ function shiftPeriod(scope, start, count) {
   return shiftDays(start, count)
 }
 
-function periodSeries(history, scope, start) {
-  if (scope === "year") return monthSeries(history, yearOf(start))
+function periodSeries(history, scope, start, app) {
+  if (scope === "year") return monthSeries(history, yearOf(start), app)
   if (scope === "day") {
     var week = weekStart(start, 1)
-    return daySeries(history, week, shiftDays(week, 6))
+    return daySeries(history, week, shiftDays(week, 6), app)
   }
-  return daySeries(history, start, periodEnd(scope, start))
+  return daySeries(history, start, periodEnd(scope, start), app)
 }
 
 // Months keep the app breakdown of the days pruned out of them, so a month or
@@ -384,6 +413,24 @@ function periodBucket(history, scope, start) {
   return bucket
 }
 
+// What a period moved, for one application or for all of them. The two answers
+// come from different places because they are right about different things. A
+// month or a year keeps the applications of the days pruned out of it, so a
+// focused total has to come from the bucket. Nothing keeps a pruned day's
+// applications at day resolution, so an unfocused total has to come from the
+// day series, which still has the bytes.
+function periodSplit(history, scope, start, app) {
+  if (app) return focusOn(periodBucket(history, scope, start), app)
+  return seriesSplit(daySeries(history, start, periodEnd(scope, start)))
+}
+
+function rankOf(ranked, app) {
+  for (var i = 0; i < ranked.length; i++) {
+    if (ranked[i].name === app) return i + 1
+  }
+  return 0
+}
+
 // Everything any of the four views puts on screen. Numbers only: the panel
 // owns the prose and the units, so these stay comparable and testable.
 //
@@ -391,33 +438,47 @@ function periodBucket(history, scope, start) {
 // day it is, because it is the thing that notices the date changing, and a
 // second answer here would disagree with it for as long as it took the next
 // sample to land.
-function periodInsights(history, scope, key, today) {
+function periodInsights(history, scope, key, today, app) {
+  var focus = app || ""
   var start = periodStart(scope, key)
   var end = periodEnd(scope, start)
-  var days = daySeries(history, start, end)
+  var days = daySeries(history, start, end, focus)
   var tracked = []
-  var rx = 0
-  var tx = 0
+  var observed = 0
   for (var i = 0; i < days.length; i++) {
-    rx += days[i].rx
-    tx += days[i].tx
-    if (days[i].key <= today) tracked.push(days[i])
+    if (days[i].key > today) continue
+    observed++
+    if (days[i].detailed) tracked.push(days[i])
   }
   var bucket = periodBucket(history, scope, start)
   var ranked = rankApps(bucket, 0)
-  var series = periodSeries(history, scope, start)
+  var series = periodSeries(history, scope, start, focus)
+  var part = periodSplit(history, scope, start, focus)
+  var everything = focus ? periodSplit(history, scope, start, "") : part
   var before = shiftPeriod(scope, start, -1)
-  var previous = seriesTotal(daySeries(history, before, periodEnd(scope, before)))
+  var earlier = periodSplit(history, scope, before, focus)
+  var total = part.rx + part.tx
+  var whole = everything.rx + everything.tx
+  var previous = earlier.rx + earlier.tx
   return {
     scope: scope,
     from: start,
     to: end,
     childScope: CHILD_SCOPE[scope],
-    total: rx + tx,
-    rx: rx,
-    tx: tx,
+    focus: focus,
+    total: total,
+    whole: whole,
+    share: whole > 0 ? total / whole : 0,
+    rx: part.rx,
+    tx: part.tx,
     apps: ranked,
     topApp: ranked.length > 0 && ranked[0].total > 0 ? ranked[0] : null,
+    rank: rankOf(ranked, focus),
+    appCount: ranked.length,
+    // A day this period covers kept its bytes and lost the application that
+    // moved them. That is what leaves a focused strip reading less than the
+    // ring above it, and it is the only reason it ever does.
+    partial: observed > tracked.length,
     series: series,
     busiest: peakDay(series),
     trackedDays: tracked.length,
@@ -427,7 +488,7 @@ function periodInsights(history, scope, key, today) {
     streak: longestStreak(tracked),
     averagePerActiveDay: averagePerActiveDay(tracked),
     previous: previous,
-    change: (rx + tx) - previous,
+    change: total - previous,
     unattributedShare: unattributedShare(bucket)
   }
 }

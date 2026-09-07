@@ -376,5 +376,87 @@ test("an empty period answers without throwing", () => {
   }
 })
 
+console.log("\nHistory focus")
+
+test("focusing narrows every number to one application", () => {
+  const week = api.periodInsights(fourDays(), "week", "2026-09-04", TODAY, "brave")
+  assert.strictEqual(week.focus, "brave")
+  assert.strictEqual(week.total, 800, "brave's three days, not the week's four")
+  assert.strictEqual(week.whole, 900, "what the week moved either way")
+  assert.strictEqual(week.share, 800 / 900)
+  assert.strictEqual(week.rx, 800)
+  assert.strictEqual(week.tx, 0)
+  assert.strictEqual(week.rank, 1)
+  assert.strictEqual(week.appCount, 2)
+})
+
+test("the strip and the day counts follow the focus", () => {
+  const week = api.periodInsights(fourDays(), "week", "2026-09-04", TODAY, "spotify")
+  assert.strictEqual(week.total, 100)
+  assert.strictEqual(week.rank, 2)
+  assert.strictEqual(week.activeDays, 1, "spotify moved bytes on one of the three days")
+  assert.strictEqual(week.peak.key, "2026-09-04")
+  assert.strictEqual(week.busiest.key, "2026-09-04")
+  assert.deepStrictEqual(week.series.filter(part => part.total > 0).map(part => part.key),
+    ["2026-09-04"], "the other days held traffic, but none of it spotify's")
+})
+
+test("the period before narrows too, so the change is the application's own", () => {
+  const h = seed([
+    ["2026-09-03", { brave: { rx: 1000, tx: 0 }, spotify: { rx: 50, tx: 0 } }],
+    ["2026-09-04", { brave: { rx: 250, tx: 0 } }]
+  ])
+  const day = api.periodInsights(h, "day", "2026-09-04", TODAY, "brave")
+  assert.strictEqual(day.previous, 1000, "yesterday's brave, not yesterday's everything")
+  assert.strictEqual(day.change, -750)
+})
+
+// Focus is meant to be a lens rather than a second implementation, so an empty
+// focus has to leave the reading it narrows exactly as it found it.
+test("focusing on nothing reads the same as not focusing at all", () => {
+  const h = fourDays()
+  for (const scope of api.SCOPES) {
+    assert.deepStrictEqual(api.periodInsights(h, scope, "2026-09-04", TODAY, ""),
+      api.periodInsights(h, scope, "2026-09-04", TODAY), scope + " disagrees with itself")
+  }
+})
+
+// The month kept what each application moved when its days were pruned. The
+// days kept only their own totals. So the number is still knowable and the
+// strip under it is not, and the reading has to admit the difference rather
+// than draw a flat month and call it a quiet one.
+test("a period past the detail window keeps an application's bytes and loses its days", () => {
+  let h = seed([
+    ["2026-05-01", { brave: { rx: 1000, tx: 0 }, spotify: { rx: 200, tx: 0 } }],
+    ["2026-09-04", { brave: { rx: 60, tx: 0 } }]
+  ])
+  h = api.prune(h, "2026-09-04", 95)
+  assert.ok(!h.days["2026-05-01"], "the day under test has to be out of the detail window")
+
+  const month = api.periodInsights(h, "month", "2026-05-01", TODAY, "brave")
+  assert.strictEqual(month.total, 1000, "the month kept the application's bytes")
+  assert.strictEqual(month.whole, 1200)
+  assert.ok(month.partial, "and has to say its days did not")
+  assert.strictEqual(api.seriesTotal(month.series), 0, "so there is no strip to draw")
+  assert.strictEqual(month.trackedDays, 30, "the day that lost its breakdown drops out of the count")
+  assert.strictEqual(month.activeDays, 0)
+
+  assert.ok(!api.periodInsights(h, "month", "2026-05-01", TODAY).partial,
+    "reading every application needs no breakdown, so nothing is missing")
+
+  const year = api.periodInsights(h, "year", "2026-05-01", TODAY, "brave")
+  assert.strictEqual(year.total, 1060)
+  assert.strictEqual(year.series[4].total, 1000, "May keeps its bar, because months keep applications")
+})
+
+test("an application the period never saw reads zero rather than throwing", () => {
+  const none = api.periodInsights(fourDays(), "week", "2026-09-04", TODAY, "ghost")
+  assert.strictEqual(none.total, 0)
+  assert.strictEqual(none.share, 0)
+  assert.strictEqual(none.rank, 0, "it is nowhere in the ranking")
+  assert.strictEqual(none.peak, null)
+  assert.ok(!none.partial, "the days are all still there, they just say nothing about it")
+})
+
 console.log(failures === 0 ? "\nAll tests passed." : `\n${failures} test(s) failed.`)
 process.exit(failures === 0 ? 0 : 1)
